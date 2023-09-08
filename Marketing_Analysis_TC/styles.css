@@ -1,0 +1,20 @@
+@import url('https://fonts.googleapis.com/css2?family=Inconsolata:wght@300&family=Open+Sans:wght@300;400&family=Ubuntu:ital,wght@0,300;0,400;1,300;1,400&display=swap');
+
+body {
+ font-size: 16px;
+}
+
+
+code {
+ font-size: 12px;
+}
+
+
+/*
+code {
+ font-family: Monaco;
+ font-size: 12px;
+}
+*/
+
+
