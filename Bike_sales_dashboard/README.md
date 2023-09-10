@@ -8,6 +8,7 @@
 - [2 minutes presentation for Executive Leadership](2min_presentation.pdf)
 - [10 minutes presentation for Sales Department](10min_presentation_Sales.pdf)
 - [SQL query](#sql-query) to gather the data for preliminary analyses and for dashboards
+- [Background research](#backgroud-research) on US bike friendly cities and bike commuters to work in US
 
 ### Background
 [Adventureworks](https://learn.microsoft.com/en-us/sql/samples/adventureworks-install-configure?view=sql-server-ver16&tabs=ssms) is a fictitious company selling bikes and accessories. 
@@ -78,3 +79,90 @@ where sp.CountryRegionCode = "US"
 ;
 
 ```
+
+### Background research
+
+#### Data about US bike friendly cities
+[The 50 most bike-friendly cities in US, ranked](https://anytimeestimate.com/research/most-bike-friendly-cities-us-2022/)
+
+```R
+# Load the necessary packages
+library(rvest)
+library(tidyverse)
+
+# Specify the URL of the page with the table
+url <- "https://anytimeestimate.com/research/most-bike-friendly-cities-us-2022/"
+
+# Use rvest to scrape the table
+page <- read_html(url)
+table_html <- page %>%
+  html_nodes("table") %>%
+  .[[3]] %>%
+  html_table(header = TRUE)
+
+df <- page %>%
+  html_nodes("table") %>%
+  .[[3]] %>%
+  html_table(header = TRUE) %>% 
+  as.tibble() %>% 
+  filter(!grepl("Nat",City), !grepl("criteria",City)) %>%  # filter out first and last row
+  mutate(`% Workers Commuting by Bicycle` = as.numeric(gsub("%", "", `% Workers Commuting by Bicycle`))) %>% 
+  mutate_at(vars(starts_with("Bike") | starts_with("Days")), funs(as.numeric)) %>%  # convert to numeric
+  separate(City, c("City", "State Code"), sep = ", ")
+
+
+df_50_most_friendly_bike_cities <- df
+
+write_csv(df_50_most_friendly_bike_cities, "50_most_friendly_bike_cities_US.csv")
+```
+
+#### Data about number of workers commuting with bike in US cities
+
+[Percent of people biking to work in US cities with more than 65K people](https://www.governing.com/archive/bike-to-work-map-us-cities-census-data.html#data)
+
+```R
+library(rvest)
+
+url <- "https://www.governing.com/archive/bike-to-work-map-us-cities-census-data.html#data"
+
+# Read in the HTML from the URL
+html <- read_html(url)
+
+# Find the table and extract its contents
+table_data <- html %>%
+  html_nodes("table") %>%
+  html_table(header = TRUE)
+
+df <- table_data[[1]]
+
+# Use the first row for column names
+colnames(df) <- as.character(df[1, ])
+
+# Remove the first row, which is now redundant
+df <- df[-1, ] %>% 
+  repair_names()
+
+# Separate City and State
+df <- df %>% 
+  separate(City, c("City", "State"), sep = ", ")
+
+df_percent_people_biking_US_cities <- df
+
+
+View(df_percent_people_biking_US_cities)
+```
+
+#### Combined dataset
+```R
+df_bike_friendly_cities <- df_percent_people_biking_US_cities %>% 
+  select(-starts_with("Margin")) %>% 
+  left_join(df_50_most_friendly_bike_cities, by = "City")
+
+write_csv(df_bike_friendly_cities, "50_most_friendly_bike_cities_US.csv")
+
+View(df_bike_friendly_cities)
+```
+
+#### Other sources
+
+https://enviroatlas.epa.gov/enviroatlas/interactivemap/
