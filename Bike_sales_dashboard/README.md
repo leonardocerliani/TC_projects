@@ -27,7 +27,7 @@ After conducting a 360º exploration of various aspects of this dataset, I decid
 - During the process we created a dashboard in Tableau that can also be provided to the Management and Sales department for further exploration and gaining additional insights
 
 [Open the dashboard for exploration](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2/SalesPersonsPerformanceperUSTerritory)
-![](dashboard_exploration_snapshot.png)](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2/SalesPersonsPerformanceperUSTerritory)
+[![](dashboard_exploration_snapshot.png)](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2/SalesPersonsPerformanceperUSTerritory)
 
 
 ### Key Insights
@@ -168,4 +168,4 @@ View(df_bike_friendly_cities)
 https://enviroatlas.epa.gov/enviroatlas/interactivemap/
 
 
-[![GitHub Logo](https://github.com/logos/github-logo.png)](https://github.com/)
+
