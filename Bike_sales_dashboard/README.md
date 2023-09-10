@@ -2,7 +2,7 @@
 
 
 ### Quick Links
-- [Preliminary EDA](https://docs.google.com/spreadsheets/d/1BXSLLAMhrzMd9XUMGBnAGO2BbZnBLn0yP7qI9d8wT1Q/edit?usp=sharing) (Google Sheets)
+- [Preliminary EDA](https://docs.google.com/spreadsheets/d/1I0pLfQLiyjO6UDb-T-ox29nBXqUYynFj7NEGnPcN8Rc/edit?usp=sharing) (Google Sheets)
 - [Dashboard for exploration](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2/SalesPersonsPerformanceperUSTerritory)
 - [Dashboard story with key insights](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2_Story/SomeKeyInsights)
 - [2 minutes presentation for Executive Leadership](2min_presentation.pdf)
