@@ -48,4 +48,8 @@ For instance:
 
 
 ### SQL query
+
+:floppy_disk: **Online/Offline orders**
 https://github.com/leonardocerliani/TC_projects/blob/main/Bike_sales_dashboard/SQL_query_Salespersons.sql#L1-L29
+
+
