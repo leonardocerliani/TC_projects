@@ -8,7 +8,7 @@
 - [2 minutes presentation for Executive Leadership](2min_presentation.pdf)
 - [10 minutes presentation for Sales Department](10min_presentation_Sales.pdf)
 - [SQL query](#sql-query) to gather the data for preliminary analyses and for dashboards
-- [Background research](#backgroud-research) on US bike friendly cities and bike commuters to work in US
+- [Background research](#background-research) on US bike friendly cities and bike commuters to work in US
 
 ### Background
 [Adventureworks](https://learn.microsoft.com/en-us/sql/samples/adventureworks-install-configure?view=sql-server-ver16&tabs=ssms) is a fictitious company selling bikes and accessories. 
