@@ -47,4 +47,5 @@ For instance:
 ![](dashboard_story_snapshot.png)
 
 
-
+### SQL query
+https://github.com/leonardocerliani/TC_projects/blob/main/Bike_sales_dashboard/SQL_query_Salespersons.sql
