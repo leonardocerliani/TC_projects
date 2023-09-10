@@ -27,6 +27,7 @@ After conducting a 360º exploration of various aspects of this dataset, I decid
 - During the process we created a dashboard in Tableau that can also be provided to the Management and Sales department for further exploration and gaining additional insights
 
 [Open the dashboard for exploration](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2/SalesPersonsPerformanceperUSTerritory)
+
 [![](dashboard_exploration_snapshot.png)](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2/SalesPersonsPerformanceperUSTerritory)
 
 
@@ -45,7 +46,8 @@ For instance:
 - Also, some top SPs receive high commissions despite their stalled or declining performance while SP receive no commissions despite their increasing performance.
 
 [Open the dashboard with key insights](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2_Story/SomeKeyInsights)
-[![](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2_Story/SomeKeyInsights)](dashboard_story_snapshot.png)
+
+[![](dashboard_story_snapshot.png)](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2_Story/SomeKeyInsights)
 
 
 ### SQL query
