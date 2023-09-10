@@ -53,3 +53,8 @@ For instance:
 https://github.com/leonardocerliani/TC_projects/blob/main/Bike_sales_dashboard/SQL_query_Salespersons.sql#L1-L29
 
 
+#### :pushpin: SQL Queries for data extraction:
+:floppy_disk: **Online/Offline orders**
+https://github.com/aidas-projects/TC_data_projects/blob/69704ad17b27332f8184e58c7ccb744cd7a71f6b/SalesDepartmentDashboard/online_ofline_orders.sql#L1-L12
+
+
