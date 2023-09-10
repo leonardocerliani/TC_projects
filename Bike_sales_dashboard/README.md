@@ -7,7 +7,7 @@
 - [Dashboard story with key insights](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2_Story/SomeKeyInsights)
 - [2 minutes presentation for Executive Leadership](2min_presentation.pdf)
 - [10 minutes presentation for Sales Department](10min_presentation_Sales.pdf)
-- SQL query to gather the data for preliminary analyses and for dashboards
+- [SQL query](#sql-query) to gather the data for preliminary analyses and for dashboards
 
 ### Background
 [Adventureworks](https://learn.microsoft.com/en-us/sql/samples/adventureworks-install-configure?view=sql-server-ver16&tabs=ssms) is a fictitious company selling bikes and accessories. 
@@ -48,4 +48,33 @@ For instance:
 
 
 ### SQL query
-https://github.com/leonardocerliani/TC_projects/blob/main/Bike_sales_dashboard/SQL_query_Salespersons.sql
+```sql
+/* 
+  Sales data with SalesOrderID as PK
+  containing info about OrderDate, Online/Offline (i.e. SP operated),
+  TotalDue, CustomerID with TerritoryID
+  This is useful to break down sales per SP in order to breakdown
+  by Volume, # orders, # clients for each SP
+*/
+select
+  distinct
+  soh.SalesOrderID, 
+  date(soh.OrderDate) as OrderDate, 
+  soh.CustomerID, 
+  soh.SalesPersonID, 
+  soh.TerritoryID, 
+  soh.TotalDue,
+  st.CountryRegionCode,
+  st.Name as Territory,
+  -- addr.StateProvinceID,
+  sp.StateProvinceCode as State_Code,
+  sp.Name as State
+from
+  `adwentureworks_db.salesorderheader` soh
+  join `adwentureworks_db.salesterritory` st on soh.TerritoryID = st.TerritoryID
+  join `adwentureworks_db.address` addr on soh.BillToAddressID = addr.AddressID
+  join `adwentureworks_db.stateprovince` sp on addr.StateProvinceID = sp.StateProvinceID
+where sp.CountryRegionCode = "US"
+;
+
+```
