@@ -45,7 +45,7 @@ For instance:
 - Also, some top SPs receive high commissions despite their stalled or declining performance while SP receive no commissions despite their increasing performance.
 
 [Open the dashboard with key insights](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2_Story/SomeKeyInsights)
-![](dashboard_story_snapshot.png)
+[![](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2_Story/SomeKeyInsights)](dashboard_story_snapshot.png)
 
 
 ### SQL query
