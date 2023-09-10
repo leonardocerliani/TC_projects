@@ -4,9 +4,10 @@
 ### Quick Links
 - Preliminary EDA
 - [Dashboard for exploration](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2/SalesPersonsPerformanceperUSTerritory)
-- Dashboard story with key insights
-- 2 minutes presentation for Executive Leadership
-- 10 minutes presentation for Sales Department
+- [Dashboard story with key insights](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2_Story/SomeKeyInsights)
+![](dashboard_story_snapshot.png)
+- [2 minutes presentation for Executive Leadership](2min_presentation.pdf)
+- [10 minutes presentation for Sales Department](10min_presentation_Sales.pdf)
 - SQL query to gather the data for preliminary analyses and for dashboards
 
 ### Background
