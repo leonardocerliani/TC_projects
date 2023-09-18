@@ -1,16 +1,16 @@
 # Cohort retention and churn
 
-The following is an example of how to write a simple, modular and flexible query to calculate cohort retention/churn (or their rate) in Bigquery SQL.
+**The following is an example of how to write a simple, modular and flexible query to calculate cohort retention/churn (or their rate) in Bigquery SQL**.
 
 The dataset is very simple, containing only user ID and the dates when the subscription start (`cohort_week`) and ends (`end_week`). Weekly cohorts are defined. 
 
 Besides the final result - displayed in Google Sheets - there are four interesting points in the logic:
 
-- the (unpivoted) table is effectively calculated just with a double `group by`, that is by cohort week and end week. This avoids using several `case..when` clauses, which can lead to typos and consequent miscalculations
+- **the (unpivoted) table is effectively calculated just with a double `group by`**, that is by cohort week and end week. This avoids using several `case..when` clauses, which can lead to typos and consequent miscalculations
 
 - the number of elapsed weeks in the `cohort_week` column is calculated using a simple window function. It can then be exported to Google Sheets so that it can be used to display the final retention/churn table in the standard triangular format
 
-- several measures can be defined (i.e. retention/churn or the corresponding rate) in different lines, and uncommented when necessary to retrieve the desired measure.
+- **several measures can be defined** (i.e. retention/churn or the corresponding rate) in different lines, and uncommented when necessary to retrieve the desired measure.
 
 - the use of the `pivot` function in native BigQuery is shown, eliminating the need to pivot the table manually in Google Sheets (although the syntax make the query less intuitive to read)
 
