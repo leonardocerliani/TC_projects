@@ -1,0 +1,1518 @@
+---
+title: "Framingham CHD logistic regression"
+subtitle: "Modelling the 10-years risk of coronary heart disease"
+author: "Leonardo Cerliani"
+date: "7/23/2023"
+output:
+  html_document:
+    self_contained: true
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: hide
+    theme: cerulean 
+image: "app_logistic.jpg"
+---
+
+
+# Introduction
+The [Framingham dataset](https://datacatalog.med.nyu.edu/dataset/10046) (available also on [kaggle](https://www.kaggle.com/datasets/aasheesh200/framingham-heart-study-dataset)) is an ongoing study which has been running since 1948. It aims to identify demographic, lifestyle and medical factors which are associated with the 10-year risk of developing heart disease.
+
+Here we use logistic regression to model the 10-year risk of coronary heart disease (CHD). The dataset consists of:
+
+- 4238 individuals, 15% of which with assessed risk of CHD
+
+- 43% males, 57% females between 32 and 70 yrs (median age = 49)
+
+- 15 recorded variables, including education, smoking habits, blood pressure measurements and anomalies, blood sample indices (e.g. glucose), medicament assumptions.
+
+
+# Main takeaways
+
+[Presentation slides](https://github.com/leonardocerliani/TC_projects/blob/main/CHD_Logistic_regression/presentation_framingham.pdf)
+
+- **The final model correctly predicts risk of CHD in 10 years in 83% of the people who are actually at risk (sensitivity)** when the threshold for binary classification is set at 0.1
+
+- The choice of this threshold (0.1) leads to many false positives, however given the potential life-threatening implications of false negatives - and the relatively simple continous monitoring of the patients with positive prediction - the choice obviously falls on maximising the sensitivity.
+
+- **The model is simple, contaning only easily retrievable variables**: sex, age, systolic blood pressure, glucose and smoking habits
+
+- Assumption of blood pressure medicaments does _not_ appear to decrease the odds of CHD risk
+
+- The amount of explained variance is moderate (17%). Other unexplored variables such as alcohol consumption, stress and wealth (among others) might improve model fit and performance.
+
+
+# Column description
+
+- **Sex**: male or female(Nominal)
+- **Age**: Age of the patient;(Continuous - Although the recorded ages have been truncated to whole numbers, the concept of age is continuous)
+- **Current Smoker**: whether or not the patient is a current smoker (Nominal)
+- **Cigs Per Day**: the number of cigarettes that the person smoked on average in one day.(can be considered continuous as one can have any number of cigarettes, even half a cigarette.)
+
+Medical( history)
+
+- **BP Meds**: whether or not the patient was on blood pressure medication (Nominal)
+- **Prevalent Stroke**: whether or not the patient had previously had a stroke (Nominal)
+- **Prevalent Hyp**: whether or not the patient was hypertensive (Nominal)
+- **Diabetes**: whether or not the patient had diabetes (Nominal)
+- **Tot Chol**: total cholesterol level (Continuous)
+- **Sys BP**: systolic blood pressure (Continuous)
+- **Dia BP**: diastolic blood pressure (Continuous)
+- **BMI**: Body Mass Index (Continuous)
+- **Heart Rate**: heart rate (Continuous - In medical research, variables such as heart rate though in fact discrete, yet are considered continuous because of large number of possible values.)
+- **Glucose**: glucose level (Continuous)
+
+Predict variable (desired target)
+- **10 year risk of coronary heart disease CHD** (binary: “1”, means “Yes”, “0” means “No”)
+
+
+_Abbreviations:_
+- **EDA** : Exploratory Data Analysis
+- **EV** : Explanatory Variable (i.e. predictor)
+
+# Load libraries and data
+```{r message=F, class.source = 'fold-show'}
+library(tidyverse)
+library(janitor)
+library(emmeans)
+library(dlookr)
+library(flextable)
+library(jtools)
+library(GGally)
+library(vcd)
+library(ggstatsplot)
+library(gridExtra)
+library(caret)
+library(jtools)
+library(kableExtra)
+library(plotly)
+library(highcharter)
+library(pROC)
+   
+
+select <- dplyr::select
+
+df <- read_csv("Graded_task_Heart_disease_data.csv") %>% 
+ tibble %>% 
+ janitor::clean_names()
+
+# change appropriate variables to factor
+df <- df %>% mutate_at(
+ c("male","education","current_smoker","bp_meds",
+   "prevalent_stroke","prevalent_hyp",
+   "diabetes","ten_year_chd"), factor
+)
+
+# df %>% glimpse()
+
+# dlookr::diagnose(df) %>% flextable
+```
+
+
+
+
+```{r message=F, include=F}
+
+# Summary statistics
+
+# https://epirhandbook.com/en/descriptive-tables.html
+library(rstatix)
+df %>% rstatix::get_summary_stats() %>% flextable()
+
+library(gtsummary)
+df %>% gtsummary::tbl_summary()
+
+```
+
+
+# Split train/test
+
+To estimate the perfomance of the model with out-of-sample data, we split the whole dataset in a train (60% - `r round(dim(df)[1]*0.6)` data points) and test (40% - `r round(dim(df)[1]*0.4)` data points) set.
+
+
+```{r}
+set.seed(124)
+N = nrow(df)
+split_index <- sample(c("train","test"), N, replace = T, prob = c(0.6,0.4))
+
+train <- df[which(split_index == "train"),]  # train set
+test <- df[which(split_index == "test"),]  # test set
+```
+
+
+
+# Outliers check
+We will carry out the check for outliers - and subsequently evaluate potential imputation for NA - only on the train data, and blindly apply this to the test. In a real world situation, the test set can grow continously, therefore we need to take decisions only on the train data.
+
+The evaluation for potential NA imputation will be carried out later, just before modelling. The reason for this is that carrying out NA imputation first would bias the EDA.
+
+
+**Observations**
+All the numerical values are in the norm, except for blood pressure. Specifically, the systolic blood pressure `sys_bp` is way too high, with about 4% of the participants having a bp > 180 (requiring immediate medical care).
+
+However, in published papers on the Framinghton studies these values are accepted as plausible. We will therefore only exclude values above 250 mmHg.
+
+
+```{r}
+
+# train %>% select_if(is.numeric) %>% summary()
+
+# boxplot(glucose ~ diabetes, data = train, main = "glucose ~ diabetes")
+
+boxplot(sys_bp ~ bp_meds, data = train, main = "systolic blood pressure ~ bp_meds")
+boxplot(sys_bp ~ prevalent_hyp, data = train, main = "systolic blood pressure ~ hypertension")
+
+# percent of people with sys_bp > 180
+pct_high_sys_bp <- round((train$sys_bp > 180) %>% sum() / nrow(train) * 100,2)
+
+# xtabs(~ prevalent_hyp + bp_meds, data = train)
+
+train <- train %>% filter(sys_bp <= 250)
+test <- test %>% filter(sys_bp <= 250)
+
+
+
+```
+
+
+
+# EDA of numerical variables
+
+Initially, we carry out t-tests to discover which EVs exhibit (corrected) significant differences between people with and without risk of CHD. 
+
+Then we will also examine the potential correlations between variables. If the latter are substantial, we will evaluate the possibility of discarding some EVs due to collinearity.
+
+
+## Two-independent-samples t-tests {.tabset}
+
+(an excercise in [fitting many models using `purrr::map`](https://www.youtube.com/watch?v=rz3_FDVt9eg))
+```{r}
+
+library(tidyr)
+
+ttests <- train %>%
+   # select("ten_year_chd", "age", "glucose") %>%
+   
+   select(-c("education","male","current_smoker","bp_meds",
+           "prevalent_stroke","prevalent_hyp", "diabetes")) %>% 
+   na.omit() %>%
+   
+   # pivot longer to prepare the nesting
+   pivot_longer(
+      cols = -ten_year_chd, 
+      names_to = "variable", values_to = "value"
+   ) %>% 
+   group_by(variable) %>% 
+   group_nest() %>%
+   
+   # fit a model to each nested df
+   mutate(
+    ttmod = map(data, ~ lm(value ~ ten_year_chd, data = .x))
+   ) %>% 
+
+   # get the stats
+   mutate(
+      tidy = map(ttmod, broom::tidy)
+   ) %>% 
+   unnest(tidy) %>% 
+   filter(term == "ten_year_chd1") %>% 
+   
+   # correct for multiple comparisons
+   mutate(adj_pval = p.adjust(p.value, method = "fdr")) %>% 
+   # filter(adj_pval <= 0.01) %>% 
+   relocate(adj_pval, .after=variable) %>% 
+   arrange(adj_pval)
+
+
+ttests %>%
+  select(variable, statistic, adj_pval) %>%
+  rename(`t value` = statistic) %>%
+  flextable() %>%
+  set_formatter(adj_pval = function(x) sprintf("%.2e", x))
+
+
+```
+
+<br>
+
+### Age
+```{r}
+ggbetweenstats(
+   data = train,
+   x = ten_year_chd,
+   y = age
+)
+```
+
+
+### Systolic blood pressure
+```{r}
+ggbetweenstats(
+   data = train,
+   x = ten_year_chd,
+   y = sys_bp
+)
+```
+
+
+### Diastolic blood pressure
+```{r}
+# 
+ggbetweenstats(
+   data = train,
+   x = ten_year_chd,
+   y = dia_bp
+)
+```
+
+
+### Glucose
+```{r}
+# 
+ggbetweenstats(
+   data = train,
+   x = ten_year_chd,
+   y = glucose
+)
+```
+
+
+### BMI
+```{r}
+# 
+ggbetweenstats(
+   data = train,
+   x = ten_year_chd,
+   y = bmi
+)
+```
+
+
+### Cholesterol level
+```{r}
+# 
+ggbetweenstats(
+   data = train,
+   x = ten_year_chd,
+   y = tot_chol
+)
+```
+
+
+## Correlation matrix
+Exploring the correlation matrix of the numerical variables to detect potential collinearity
+
+```{r, message=F}
+train %>% 
+ # select(-c("education","male","current_smoker","bp_meds",
+ #           "prevalent_stroke","prevalent_hyp", "diabetes")) %>%
+ select(ten_year_chd, age, sys_bp, dia_bp, bmi, glucose, tot_chol) %>% 
+ na.omit() %>% 
+ # mutate_at(vars(-ten_year_chd), ~ log(. + 1)) %>% 
+ GGally::ggpairs(
+    aes(color = ten_year_chd),
+    upper = list(continuous = wrap("cor", size = 3)),
+    lower = list(continuous = wrap("points", alpha = 0.7, size = 1)),
+    diag = list(continuous = wrap("densityDiag", alpha = 0.5))
+ )
+
+```
+
+
+
+## Observations - numerical EVs
+
+- `age` appears to be the most discriminant variable for ten year CHD prediction. Other EVs which are significantly different (after correction with FDR) in people with and without CHD risk are `bmi`, `sys_bp`, `dia_bp`, `glucose`, `tot_chol`.
+
+- the systolic `sys_bp` and diastolic `dia_bp` blood pressure are correlated with each other - as expected. Since CHD is especially related to hypertension, we will only use systolic blood pressure
+
+- `bmi` and `age` are also correlated with blood pressure, however they appear to be important variables for CHD and their correlation with blood pressure is mild, so we will keep them
+
+- NB: the number of cigarettes per day (`cigs_per_day`) will be explored as a categorical variable (see below) with levels for tens of cigarettes per day
+
+
+
+# EDA of categorical variables  
+```{r}
+# train %>% select_if(is.factor) %>% summary
+```
+
+As before for the numerical variables, we will first assess a dependence between risk of CHD and other categorical variables, and then explore the reciprocal relationships of all categorical variables to assess the presence of collinearity.
+
+## Chi-square tests {.tabset}
+
+### Sex (male)
+```{r}
+library(ggstatsplot)
+
+ggbarstats(
+   data = train %>% select(ten_year_chd, male),
+   x = male,
+   y = ten_year_chd,
+   label = "both"
+)
+```
+
+### Hypertension
+```{r}
+
+ggbarstats(
+   data = train %>% select(ten_year_chd, prevalent_hyp),
+   x = prevalent_hyp,
+   y = ten_year_chd,
+   label = "both"
+)
+```
+
+
+### Cigarettes per day
+
+The values are too sparse to treat this as a continous variable. We will therefore group the # cigs per day in tens and treat this as a categorical variable.
+
+A first visual exploration shows that there appear to be mild differences in the proportion of people smoking different amount of cigarettes per day.
+
+When carrying out a chi-square test of independence, we are warned that the results might be incorrect. This appears to be due to the fact that there are too few observations in the category for 50 and 60 cigarettes per day. When these levels are removed, a significant (p = 0.0066) dependence is shown between risk group and amount of cigarettes per day.  
+
+```{r}
+
+# Suppress summarise info
+options(dplyr.summarise.inform = FALSE)
+
+train %>% 
+   select(ten_year_chd, cigs_per_day) %>% 
+   na.omit() %>% 
+   mutate(cigs_factor = round(cigs_per_day/10,0)) %>% 
+   group_by(ten_year_chd, cigs_factor) %>% 
+   summarise(count = n(), .group = "drop") %>% 
+   group_by(ten_year_chd) %>%
+   mutate(prop = count / sum(count)) %>% 
+   select(ten_year_chd, cigs_factor, prop) %>%
+   ggplot(aes(x = factor(cigs_factor), y = prop, fill = ten_year_chd)) +
+   geom_bar(stat = "identity", position = "dodge") + 
+   labs(x = "Tens of Cigarettes per Day", y = "Proportion in each group", fill = "CHD Status")
+
+train %>% 
+   select(ten_year_chd, cigs_per_day) %>% 
+   mutate(tens_cigarettes = round(cigs_per_day/10, 0) ) %>% 
+   filter(tens_cigarettes < 5) %>% 
+   select(-cigs_per_day) %>% 
+   na.omit() %>% 
+   xtabs(~ ten_year_chd + tens_cigarettes, data = .) %>% 
+   chisq.test()  %>% tidy() %>% kable(format = "html") %>%
+   add_header_above(c("Chi-Square CHD Risk ~ Tens_of_cigarettes" = 4)) %>%
+   kable_styling()
+
+```
+
+
+### Current smoker
+```{r}
+
+ggbarstats(
+   data = train %>% select(ten_year_chd, current_smoker),
+   x = current_smoker,
+   y = ten_year_chd,
+   label = "both"
+)
+```
+
+
+
+### Blood pressure medication
+```{r}
+
+ggbarstats(
+   data = train %>% select(ten_year_chd, bp_meds),
+   x = bp_meds,
+   y = ten_year_chd,
+   label = "both"
+)
+```
+
+
+### Education
+```{r}
+ggbarstats(
+   data = train %>% select(ten_year_chd, education),
+   x = education,
+   y = ten_year_chd,
+   label = "both"
+)
+```
+
+
+
+## Association matrix (categorical)
+Graphically display the association between binary categorical variables, including `ten_year_chd` to assess the presence of correlated predictors
+```{r}
+
+library(vcd)
+
+train_cat <- train %>% select_if(is.factor) %>% select(-c("ten_year_chd","education"))
+
+pairs(
+   table(train_cat), 
+   diag_panel = pairs_diagonal_mosaic(offset_varnames=-2.5),    #move down variable names
+   upper_panel_args = list(shade = TRUE),                       #set shade colors
+   lower_panel_args = list(shade = TRUE)
+)
+
+```
+
+
+
+## Observations - categorical EVs 
+
+- The 10 year risk of CHD is more prevalent in males than in females
+- Not surprisingly, hypertension and assumption of blood pressure medications is also associated with risk. We will also examine the latter, although only ~ 3% of the sample takes these medications
+- The number of cigarettes smoked per day (in groups of 10) also increaes the risk of CHD. Interestingly, still, more than 50% of the people who are at risk do not smoke. It would be interesting to have data about the quality of the air of the place where they live, or whether their partner is a smoker.
+- It is also interesting that the relationship between amount of cigarettes per day and risk is not linear: there are more people at risk among those who smoke 20-30 or 40-50 cigs per day. while among those who smoke 10-20 or 30-40 cigs per day the proportion of people with and without risk is almost 50%. This strange behaviour can probably be - at least in part - explained by the fact that smokers tend to underestimate the amount of cigarettes smoked. 
+- Instead, the fact of being a current smoker does not appear to be a risk factor
+- There is an interaction between being make, having hypertension and being a current smoker. We will examine whether this interaction can increase the prediction, although the fact of currently smoking _per se_ apparently does not.
+
+
+# Choice of predictors  {.tabset}
+
+**Numerical variables**
+Age (`age`), High blood pressure (`sys_bp`), body-mass index (`bmi`), glucose blood level (`glucose`), cholesterol blood level (`tot_chol`) appear to be involved in predicting the risk of CHD. As noted above, `cigs_per_day` was treated as a categorical variables with levels for o and multiples of 10.
+
+**Categorical variables**
+Sex (`male`), hypertension (`prevalent_hyp`), blood pressure medications (`bp_meds`), education (`education`) and number of cigarettes per day (`cigs_per_day`) appear to be involved in predicting the risk of CHD.
+
+There are widespread associations between numerical and categorical variables. This is _not_ surprising for two reasons:
+
+- some variables are proxy each other (e.g. `sys_bp`, `prevalence_hyp`, `bp_meds`)
+- some variables are linked by known relationships: e.g. with `age`, the `bmi` increases, and both are likely to lead to increased blood pressure `sys_bp`, which in turn can lead to hypertension and relative medicaments
+
+Despite this, we will enter all the selected variables in the model and assess the presence of collinearity using VIF.
+
+
+## age 
+
+```{r, message=F}
+
+library(gridExtra)
+
+boxplot_tt <- function(response, predictor) {
+   tt <- t.test(train[[response]] ~ train[[predictor]], data =train)
+   
+   res <- paste0("t = ", round(tt$statistic,2), " p = ", round(tt$p.value,4))
+   
+   p <- train %>% na.omit() %>% 
+      ggplot(aes(x = .data[[predictor]], y = .data[[response]])) +
+      geom_boxplot() +
+      labs(title = paste0(predictor," vs ", response),
+           subtitle = res)
+   
+   return(p)
+   
+}
+
+p1 <- boxplot_tt("age", "male")
+p2 <- boxplot_tt("age", "prevalent_hyp")
+p3 <- boxplot_tt("age", "bp_meds")
+
+grid.arrange(p1, p2, p3, nrow = 1)
+
+```
+
+## bmi
+
+```{r}
+p1 <- boxplot_tt("bmi", "male")
+p2 <- boxplot_tt("bmi", "prevalent_hyp")
+p3 <- boxplot_tt("bmi", "bp_meds")
+
+grid.arrange(p1, p2, p3, nrow = 1)
+
+```
+
+## hypertension (sys_bp)
+
+```{r}
+p1 <- boxplot_tt("sys_bp", "male")
+p2 <- boxplot_tt("sys_bp", "prevalent_hyp")
+p3 <- boxplot_tt("sys_bp", "bp_meds")
+
+grid.arrange(p1, p2, p3, nrow = 1)
+
+```
+
+## glucose level
+
+```{r}
+p1 <- boxplot_tt("glucose", "male")
+p2 <- boxplot_tt("glucose", "prevalent_hyp")
+p3 <- boxplot_tt("glucose", "bp_meds")
+
+grid.arrange(p1, p2, p3, nrow = 1)
+
+```
+
+## cholesterol level
+
+```{r}
+p1 <- boxplot_tt("tot_chol", "male")
+p2 <- boxplot_tt("tot_chol", "prevalent_hyp")
+p3 <- boxplot_tt("tot_chol", "bp_meds")
+
+grid.arrange(p1, p2, p3, nrow = 1)
+
+```
+
+
+
+# NA Assessment  {.tabset}
+
+As a last step before fitting the models, we need to take care of NAs in these 6 variables. 
+As mentioned in the beginning, we do this here in order not to bias the EDA.
+
+In case of imputation, we will apply the same procedure blindly to the test set.
+
+`bmi` is significantly different for males and females. There are only 12 values missing. We will impute the NAs with the median of each gender in either risk or no-risk group.
+
+`glucose` and `tot_chol` are significantly different especially in people with and without hypertension. We will impute the NAs with the median of each gender in either risk or no-risk group.
+
+`bp_meds` is a very important variable, and not easy to impute, so we don't want to run risks here. We see from the table below that the people where blood pressure (bp) medication was not recorded have (median) bp values compatible with people who have either high or low blood pressure AND do not take medications. This could justify the imputation. At the same time, this is a very important variable, associated with drug use. We don't want to run this risk. We will therefore discard people where it is not known whether they take medications.
+
+`cigs_per_day` is a variable that can hardly be imputed correctly, therefore we will remove the data points with NA in this variable (less than 1%)
+
+
+## bmi
+```{r}
+# bmi ~ male
+ggbetweenstats(
+   data = train,
+   x = male,
+   y = bmi
+)
+```
+
+## glucose
+```{r}
+# glucose ~ hypertension
+ggbetweenstats(
+   data = train,
+   x = prevalent_hyp,
+   y = glucose
+)
+```
+
+## cholesterol
+```{r}
+# cholesterol ~ hypertension
+ggbetweenstats(
+   data = train,
+   x = prevalent_hyp,
+   y = tot_chol
+)
+```
+
+## bp_meds
+```{r}
+# bp_meds ~ prevalent_hyp
+df %>% 
+  select(sys_bp, prevalent_hyp, bp_meds) %>%
+  group_by(bp_meds, prevalent_hyp) %>% 
+  summarise(
+    median_sys_bp = median(sys_bp),
+    count_prevalent_hyp = n()
+  ) 
+
+```
+
+NA imputation on train _and_ test set
+```{r}
+
+# ------------------------- train --------------------------------------------
+train <- train %>%
+   # impute the bmi as the median of males/females
+   group_by(ten_year_chd, male) %>%
+   mutate(bmi = ifelse(is.na(bmi), median(bmi, na.rm = T),bmi)) %>%
+   ungroup() %>%
+   
+   # impute glucose and cholesterol level as the median of prevalent_hyp
+   group_by(ten_year_chd, prevalent_hyp) %>%
+   mutate(glucose = ifelse(is.na(glucose), median(glucose, na.rm=T), glucose)) %>%
+   mutate(tot_chol = ifelse(is.na(tot_chol), median(tot_chol, na.rm=T), tot_chol)) %>%
+   ungroup() %>% 
+   
+   # remove people where bp_meds is not unknown
+   filter(!is.na(bp_meds)) %>% 
+   
+   # remove people with no information about education level
+   filter(!is.na(education)) %>% 
+   
+   # # remove the mean from numerical variables
+   # mutate_if(is.numeric, ~ . - mean(., na.rm = TRUE)) %>% 
+   
+   # remove residual NAs
+   na.omit()
+   
+   
+   
+
+train %>% 
+   select(
+      ten_year_chd, age, sys_bp, bmi, glucose, tot_chol, 
+      male, prevalent_hyp, bp_meds, education
+   ) %>%
+   diagnose %>%
+   flextable
+
+
+# ------------------------- test --------------------------------------------
+test <- test %>%
+   # impute the bmi as the median of males/females
+   group_by(ten_year_chd, male) %>%
+   mutate(bmi = ifelse(is.na(bmi), median(bmi, na.rm = T),bmi)) %>%
+   ungroup() %>%
+   
+   # impute glucose and cholesterol level as the median of prevalent_hyp
+   group_by(ten_year_chd, prevalent_hyp) %>%
+   mutate(glucose = ifelse(is.na(glucose), median(glucose, na.rm=T), glucose)) %>%
+   mutate(tot_chol = ifelse(is.na(tot_chol), median(tot_chol, na.rm=T), tot_chol)) %>%
+   ungroup() %>% 
+   
+   # remove people where bp_meds is not unknown
+   filter(!is.na(bp_meds)) %>% 
+   
+   # remove people with no information about education level
+   filter(!is.na(education)) %>% 
+   
+   # # remove the mean from numerical variables
+   # mutate_if(is.numeric, ~ . - mean(., na.rm = TRUE)) %>% 
+   
+   # remove residual NAs
+   na.omit()
+
+
+
+
+test %>% 
+   select(
+      ten_year_chd, age, sys_bp, bmi, glucose, tot_chol, 
+      male, prevalent_hyp, bp_meds, education
+   ) %>%
+   diagnose %>%
+   flextable
+
+```
+
+
+
+
+
+# Analytic strategy
+
+**It appears that there are two interesting questions:**
+
+1. How well is the risk predicted by generic factors alone? (such as sex, age, and blood pressure)
+
+2. How much can we increase the prediction if we include other variables more related to hypertension, such as diagnosed hypertension or assumption of blood pressure medications? 
+
+Since we allowed some correlated variables to enter the model, we will pay close attention to the VIF (variance inflation factor).
+
+After the "best" model is detemined by manual stepwise regression, we will compare the former to an automatic stepwise regression carried out using the AIC criterion alone.
+
+
+```{r, include=F}
+# https://epirhandbook.com/en/descriptive-tables.html
+train %>% select(
+      ten_year_chd, age, sys_bp, bmi, glucose, tot_chol, 
+      male, prevalent_hyp, bp_meds, education
+   ) %>% rstatix::get_summary_stats() %>% flextable()
+
+train %>% select(
+      ten_year_chd, age, sys_bp, bmi, glucose, tot_chol, 
+      male, prevalent_hyp, bp_meds, education
+   ) %>% gtsummary::tbl_summary()
+
+```
+
+
+
+
+# Logistic regression
+
+
+## Procedure for stepwise modelling
+
+We start by fitting the **"maximal" model**, which includes all the provided EVs, to have a baseline estimate for the AUC of this model and of the impact of the correlation between variables we previously detected with EDA - for the latter, we will check the VIF.
+
+Then we fit the **full model**, which includes all the variables we previously selected based on the EDA. This will show how well the hints gathered in the EDA are actually reflected in the significance of the coefficients. Specifically, compared to the "maximal" model.
+
+We will then proceed to eliminate EVs based on whether the coefficients are not sigificant or have a very small effect (in terms of odds ratio). At each step we evaluate the AIC and AUC to detect whether reducing the EVs led to an increase or decrease of the performance.
+
+Finally we will examine the confusion matrix and adjust the threshold for binary prediction in order to have maximum Sensitivity (more on this later).
+
+
+## Format of the summary tables
+
+The coefficients are reported in two forms (at the expense of verbosity):
+
+- original, non-standardized and non-exponentiated (using `summary()`): to allow calculation of the odds ratio (via `exp()`) of 10 year CHD given the actual values of the EVs for a specific person.
+
+- standardized and exponentiated (using `jtools::summ()`): to allow comparing the magnitude of the coefficients, to have the confidence intervals and to calculate the VIF.
+
+
+
+
+## Results
+
+The AIC was similar across all examined models (between 1887 and 1890), therefore this metric had a small weight in the choice of the final model. Similarly, all the models explained at most 17% of the total variance in the data, which is not a substantial amount.
+
+The VIF was not critical, even in the maximal model, therefore the impact of correlated predictors was minimal or negligible.
+
+The **maximal model** highlighted the contribution of gender, age, systolic blood pressure, and to a lesser extent the prevalence of hypertension and education. Importantly, the p values for some of these variables was higher than in simpler models, most likely due to collinearity with other variables. The AUC of this model was 0.703.
+
+Our **full model** highlighted the same variables. In addition reducing the number of EVs increased the significance of most of the selected EVs (especially age and systolic blood pressure). The AUC of this model was 0.705.
+
+We then removed EVs with small or no effect from the full model, specifically blood pressure medications, bmi, cholesterol and education. This led to an AUC of 0.711, and all variables significant.
+
+Further removing the EVs specifying whether the patient had hypertension led to a simpler model and did not substantially change the AUC (0.713).
+
+**Remarkably, this model contained only gender, age, systolic blood pressure and glucose blood level, in addition to number of cigarettes smoked per day. That is, two common demographic variables, and two physiologic measurements which can be easily retrieved with blood pressure measurement and a simple blood exam**
+
+The increase in odds to develop a CHD in 10 years were as follows for each EV:
+
+- sex: males have $exp(0.449) \approx 57\%$ greater odds of CHD risk than females
+- cigarettes per day : $exp(0.1766) \approx 19\%$ greater odds for any additional 10 cigarettes smoked every day
+- age : the odds of CHD increase $exp(0.0658) \approx 6.8\%$ every year
+- systolic blood pressure : $exp(0.0186) \approx 1.8\%$ greater odds for each mmHg
+- glucose : $exp(0.0075) \approx 0.7\%$ greater odds for each mg
+
+The intercept can be interpreted as the probability of a female being at risk _when all predictors are set to 0_. In our case we have predictors for age, glucose and blood pressure, which are obviously not zero, therefore this interpretation of the intercept is not really helpful in our case. For the sake of calculation: $p = \frac{e^{\beta_0}}{1 + e^{\beta_0}} = \frac{exp(-8.643)}{1+exp(-8.643)} = 0.000176$ 
+
+
+
+It is at this point very interesting to notice that:
+
+1. Assumption of blood pressure medications does _not_ reduce the 10 years risk of CHD
+2. Having hypertension has only a small effect on the prediction of developing a risk of CHD in 10 years
+
+**This is a very interesting result from a practical perspective, since it means that generic demographic and physiological variables are much more predictive of the risk of CHD in 10 years with respect to a diagnosis of hypertension, and that the assumption of blood pressure medicaments - presumably to normalize the blood pressure level in people with hypertension - does _not_ reduce the risk of CHD**
+
+
+**Our final model therefore includes:**
+
+- sex
+- age
+- systolic blood pressure 
+- glucose
+- cigarettes per day
+
+
+Afterwards, we evaluated the performance of our model on the test data. Using a default probability of 0.5 for binary prediction leads to a poor Sensitivity, in that only ~ 7% of the people with a real 10 year CHD risk ($\frac{16}{16+219}$) are predicted as being at risk.
+
+**Since in our case the aim is to maximise the detection of people who are truly at risk** - even at expense of inflating the number of false negatives - **we lowered the threshold of binary prediction to 0.1. This allowed us to reach a sensitivity of 84%**.
+
+The **automatic stepwise regression** (`stepAIC`) identifies the same variables as our final model, plus a small (uncorrected significant) contribution of education level and prevalence of hypertension. However, this model has a smaller AUC (0.703) than our final model, and is also more complex. Therefore we retained our final model.
+
+Finally, we hypothesized that the imbalance between Sensitivity and Specificity could be due to the high proportion of people not at risk in our dataset. Therefore, as a last test, we sampled an equal number of people with and without risk. 
+
+In this **balanced samples model** the AUC increased to 0.738. By using a threshold for binary decision of 0.3, this model correctly predicts 91.4% of the people with actual CHD risk, and a false negative rate of 70%. By adopting a more liberal threshold of 0.4, the model predicts 81.3% of the people with actual CHD, and about 50% of the people with no risk of CHD. 
+
+
+**A final remark**
+This model captures only a fraction of the total variance in the data (~ 15%). It is odd that other variables widely thought to be associated with cardiovascular diseases were not recorded, such as stress level (e.g. # hours of work per day/week), alcohol comsumption, quality of the air.
+
+---
+
+`do_logistic_regression` : a function to carry out the logistic regression and print out the summary of the model, the ROC curve - and the AUC - as well as the confusion matrix.
+
+`plot_ROC` : a function that generates an interactive ROC that allows to inspect  Sensitivity and Specificity for different levels of threshold for binary decision
+
+```{r}
+
+do_logistic_regression <- function(EVs, train_data = train, test_data = test, thresh = 0.5) {
+   
+   # Assemble the formula
+   formula_string <- paste(EVs, collapse = " + ")
+   formula_obj <- as.formula(paste("ten_year_chd ~", formula_string))
+   
+   fit <- glm(formula_obj, family = "binomial", data = train_data)
+
+   
+   # # Standard R summary
+   summary(fit) %>% print()
+   
+   
+   # Print a summary
+   # summary(fit) %>% print()
+   if (length(EVs) > 1) {
+      jtools::summ(fit, confint = T, vifs = T, scale = F, exp = T, digits = 2) %>% print()
+   } else {
+      jtools::summ(fit, confint = T, vifs = T, scale = F, exp = T, digits = 2) %>% print()
+   }
+
+   # Estimated probability values from the logistic model
+   phat = predict(fit, newdata = test_data, type = "response")
+
+   # Confusion matrix and derived quantities - using caret::confusionmatrix
+   sprintf("\n Using a threshold for prediction = %.2f \n\n", thresh) %>% cat()
+   
+   thresh <- thresh
+   predicted <- ifelse(phat > thresh, 1, 0)
+   
+   actual_predicted <- tibble(
+      actual = test_data$ten_year_chd, 
+      predicted = ifelse(phat > thresh, 1, 0) 
+   )
+   
+   caret::confusionMatrix(
+      as.factor(predicted), # predicted
+      as.factor(test_data$ten_year_chd), # actual 
+      positive = "1"  # the positive class in our case is "1"
+   ) %>% print()
+   
+   return(phat)
+}
+
+
+plot_ROC <- function(test_data = test, phat = phat) {
+ # Define the probability thresholds you want to use
+   pthresh <- seq(0, 1, 0.1)
+   
+   # Create the ROC curve
+   roc_curve <- roc(test_data$ten_year_chd, phat, plot = F, print.auc=T)
+   
+   # Get the coordinates (sensitivity and specificity) for the specified thresholds
+   coordinates <- pROC::coords(roc_curve, pthresh)
+
+    # Using highcharter
+    h <- coordinates %>% 
+    hchart(
+        type = "line",
+        hcaes(x = specificity, y = sensitivity, threshold = threshold)
+    ) %>% 
+    hc_xAxis(title = list(text = "Specificity"), reversed = TRUE, min = 0, max = 1) %>%
+    hc_yAxis(title = list(text = "Sensitivity"), min = 0, max = 1) %>% 
+    hc_add_series(
+        data = coordinates,
+        type = "scatter",
+        hcaes(x = specificity, y = sensitivity, threshold = threshold),
+        marker = list(radius = 6, fillColor = "lightblue", lineWidth = 2),
+        tooltip = list(
+            headerFormat = "",
+            pointFormat = "<b>Threshold: {point.threshold:.2f}</b><br>
+                           Sensitivity: {point.y:.2f}<br>
+                           Specificity: {point.x:.2f}")
+    ) %>% 
+     hc_chart(aspectRatio = 1) %>%   # Set the equal aspect ratio
+     hc_title(text = paste("ROC curve - AUC =", round(roc_curve$auc,3)))
+    
+    return(h)
+}
+
+```
+
+
+## Manual stepwise {.tabset}
+
+### Maximal model
+
+Maximal model, including _all_ the variables in the dataset. We use this only as a benchmark for the models instructed by EDA.
+
+We observe high VIF values in `sys_bp` and `dia_bp` - as expected. 
+
+```{r}
+EVs <- train %>% select(-ten_year_chd) %>% colnames()
+phat <- do_logistic_regression(EVs, thresh = 0.5)
+plot_ROC(test, phat)
+```
+
+
+### Full with selected variables
+
+This is the "full" model with all the variables chosen based on the EDA.
+
+No problems with collinearity.
+
+```{r}
+EVs  <- c(
+   "male", "prevalent_hyp", "bp_meds", "education",
+   "age", "sys_bp", "bmi", "glucose", "tot_chol", "cigs_per_day"
+)
+
+phat <- do_logistic_regression(EVs, thresh = 0.5)
+plot_ROC(test, phat)
+
+```
+
+
+### Remove no-effect EVs
+
+Remove education, bp_meds, bmi, tot_chol since they have
+no effect on the model.
+
+The AIC slightly decreases with respect to the full model.
+
+```{r}
+# Remove education, bp_meds, bmi, tot_chol since they have
+# no effect on the model
+EVs  <- c(
+   "male", "prevalent_hyp",
+   "age", "sys_bp", "glucose", "cigs_per_day"
+)
+
+phat <- do_logistic_regression(EVs, thresh = 0.5)
+plot_ROC(test, phat)
+```
+
+
+### Remove prevalent_hyp
+
+Remove prevalent_hyp since it is only marginally significant
+
+Note that the AIC only marginally increases (less than 0.2%) and this model is much simpler and requires only 4 variables, two of which are common demographic variables (`age` and sex), while the other two can be easily gathered through a pressure measurement and a blood test.
+
+```{r}
+# Remove prevalent_hyp since it is only marginally significant
+EVs  <- c(
+   "male", "age", "sys_bp", "glucose", "cigs_per_day"
+)
+
+phat <- do_logistic_regression(EVs, thresh = 0.5)
+plot_ROC(test, phat)
+```
+
+
+### Assess categorical interactions
+
+The number of cigarettes per day is a relevant factor, although being a current smoker is not. Since there is an interaction between being male, current smoker and having hypertension, it is worth exploring whether including these interactions would improve the performance of the model.
+
+However, the results show that the coefficients associated with `male:current_smoker` and `current_smoker:prevalent_hyp` are not significant - especially after correction. Also, they are highly collinear with `cigs_per_day` - which becomes not significant - and do not improve the model performance. 
+
+For all these resasons, these interactions will _not_ be included in the final model.
+
+```{r}
+# Try to include `male:current_smoker` and `current_smoker:prevalent_hyp`
+EVs  <- c(
+   "male", "age", "sys_bp", "glucose", "male:current_smoker", "current_smoker:prevalent_hyp"
+)
+
+phat <- do_logistic_regression(EVs, thresh = 0.5)
+plot_ROC(test, phat)
+```
+
+
+### Sigmoid for age
+
+We also decided to try to model age as a sigmoid, under the assumption that the odds of a CHD risk in ten years were overall smaller for people < 40 and would increase at a steeper rate afterwards, however the perfomance of the model did not change. 
+
+```{r}
+
+sigmoid_function <- function(x, a, b, c, d) {
+  # Sigmoid function formula: a + (b - a) / (1 + exp(-c * (x - d)))
+  return(a + (b - a) / (1 + exp(-c * (x - d))))
+}
+
+# Define the parameters for the sigmoid function to control the curve
+a_linear <- 0      # Start value (linear increase starts from 0)
+b_linear <- 1      # End value of linear increase (1 represents 100%)
+c_steepness <- 0.15 # Steepness factor for the sigmoid curve (adjust as needed)
+d_transition <- 50 # Age at which the transition occurs (50 in your case)
+
+
+train_sigmoid_age <- train %>% 
+ mutate(age_sigmoid = sigmoid_function(age, a_linear, b_linear, c_steepness, d_transition))
+
+test_sigmoid_age <- test %>% 
+ mutate(age_sigmoid = sigmoid_function(age, a_linear, b_linear, c_steepness, d_transition))
+
+
+plot(train_sigmoid_age$age, train_sigmoid_age$age_sigmoid)
+
+# The proxy_age variable now has a smooth transition, increasing linearly until 50 and more steeply after that.
+
+
+
+EVs  <- c(
+   "male", "age_sigmoid", "sys_bp", "glucose", "cigs_per_day"
+)
+
+phat <- do_logistic_regression(
+ train_data = train_sigmoid_age,
+ test_data = test_sigmoid_age,
+ EVs, thresh = 0.1
+)
+
+plot_ROC(test_sigmoid_age, phat)
+
+```
+
+
+
+
+### Final model using thr = 0.5
+
+We decided to include the following variables in the final model:
+
+- male
+- age
+- sys_bp
+- glucose
+- cigs_per_day
+
+At this point, we evaluate the performance of the model in terms of sensitivity (TP/TP+FN) using a default threshold of 0.5 for binary decision on the test set.
+
+Our aim is to maximise the amount of people at risk which are predicted to be so by the model.
+
+```{r}
+# The main aim is to use the model to identify the highest amount of true positives
+# and minimize false negatives
+
+EVs  <- c(
+   "male", "age", "sys_bp", "glucose", "cigs_per_day"
+)
+
+phat <- do_logistic_regression(EVs, thresh = 0.5)
+plot_ROC(test, phat)
+```
+
+
+### Final model using thr = 0.1
+
+Leaving the default threshold of 0.5 for binary prediction leads to identifying too few true positives. For this reason, we decided to maximise the Sensitivity (TP / (TP+FN)) even at the expense of assigning high risk of CHD to some people who are not.
+
+This rationale is motivated by the fact that in this case the decision is not about doing or not doing an open-heart surgery, but rather to start to monitor people who might be at high risk. Plus, according the to the model, an accurate monitoring only requires inexpensive procedures: blood test and pressure measurements. 
+
+For this reason, it is of paramount important to include all the people who might be at risk even if they will turn out not to be so.
+
+The threshold for risk detection is accordingly lowered to 0.1.
+
+This leads to determine that almost 50% of the people who are _not_ at risk will be deemed to be actually at risk. However, this choice will lead to a Sensitivity of about 80%. 
+
+NB: We also replace the `cigs_per_day` with units of tens of cigarettes
+
+```{r}
+# The main aim is to use the model to identify the highest amount of true positives
+# and minimize false negatives
+
+# EVs  <- c(
+#    "male", "age", "sys_bp", "glucose", "cigs_per_day"
+# )
+# 
+# phat <- do_logistic_regression(EVs, thresh = 0.1)
+
+
+train_cig_factor <- train %>% 
+ mutate(tens_cigs = round(cigs_per_day/10,0))
+
+test_cig_factor <- test %>% 
+ mutate(tens_cigs = round(cigs_per_day/10,0))
+
+
+EVs  <- c(
+   "male", "age", "sys_bp", "glucose", "tens_cigs"
+)
+
+phat <- do_logistic_regression(
+ EVs, 
+ train_data = train_cig_factor, 
+ test_data = test_cig_factor, 
+ thresh = 0.1
+)
+
+plot_ROC(test, phat)
+
+```
+
+
+
+
+
+
+Code to manually calculate the Confusion Matrix and its derivatives. Values are not shown. This was just an excercise.
+
+```{r}
+
+# # Binary prediction from the estimated probability values 
+# thresh <- 0.1
+# predicted <- ifelse(phat > thresh, 1, 0)
+# 
+# actual_predicted <- tibble(
+#    actual = test$ten_year_chd, 
+#    predicted = ifelse(phat > thresh, 1, 0) 
+# )
+# 
+# cm <- actual_predicted %>%
+#   summarise(
+#     TP = sum(actual == 1 & predicted == 1),
+#     TN = sum(actual == 0 & predicted == 0),
+#     FP = sum(actual == 0 & predicted == 1),
+#     FN = sum(actual == 1 & predicted == 0)
+#   )
+# 
+# cm %>% print
+# 
+# TP <- cm$TP
+# TN <- cm$TN
+# FP <- cm$FP
+# FN <- cm$FN
+# 
+# 
+# accuracy <- (TP + TN) / (TP+TN+FP+FN)
+# print(paste0("Accuracy = ", round(accuracy,4)))
+# 
+# sensitivity <- TP / (TP + FN)
+# print(paste0("Sensitivity / Recall / TPR = ", round(sensitivity,4)))
+# 
+# specificity <- TN / (TN + FP)
+# print(paste0("Specificity / TNR = ", round(specificity,4)))
+# 
+# PPV <- TP / (TP+FP)
+# print(paste0("Positive Predictive Value = ", round(PPV,2)))
+# 
+# NPV <- TN / (TN+FN)
+# print(paste0("Negative Predictive Value = ", round(NPV,2)))
+
+```
+
+
+
+
+
+
+
+## Automatic stepwise
+
+_This_ particular stepwise regression leads to a much more complex model. It is important to note that the particular order of the predictors can change the final estimated "best" model (based on AIC).
+
+However what is very important is that the `cigs_per_day` is identified as an important predictor, despite our EDA repeatedly disconfirmed so. The reasons are therefore to be explored, however for the time being we will try to include it into our manually built model (see above.)
+
+```{r, message=F}
+
+library(MASS)
+
+fullModel = glm(
+   ten_year_chd ~ male + prevalent_hyp + bp_meds + age + sys_bp + glucose + tot_chol,
+   family = "binomial", data = train
+)
+
+fullModel = glm(ten_year_chd ~ ., family = "binomial", data = train)
+
+nullModel = glm(ten_year_chd ~ 1, family = "binomial", data = train)
+
+step_fit <- stepAIC(
+   fullModel, direction = 'backward', 
+   scope = list(upper = fullModel, lower = nullModel), trace = 0
+)
+
+step_fit %>% summary()
+step_fit %>% jtools::summ(confint = T, vifs = T, digits = 2) %>% print()
+
+# Estimated probability values from the logistic model
+phat_step_fit = predict(step_fit, newdata = test, type = "response")
+
+```
+
+
+
+
+
+Evaluate predictivity of the stepwise model
+
+```{r}
+# Binary prediction from the estimated probability values 
+thresh <- 0.1
+predicted <- ifelse(phat_step_fit > thresh, 1, 0)
+
+actual_predicted <- tibble(
+   actual = test$ten_year_chd, 
+   predicted = ifelse(phat_step_fit > thresh, 1, 0) 
+)
+
+caret::confusionMatrix(
+   as.factor(predicted), # predicted
+   as.factor(test$ten_year_chd), # actual 
+   positive = "1"  # the positive class in our case is "1"
+)
+
+
+plot_ROC(test, phat_step_fit)
+```
+
+
+
+
+## Samples balanced for CHD risk
+Our sample is very unbalanced. We will select an equal number of people with and without risk in both train and test set to assess whether this will help model performance.
+
+
+```{r}
+set.seed(9999)
+
+min_train <- min(
+   nrow(train[train$ten_year_chd == 1,]),
+   nrow(train[train$ten_year_chd == 0,])   
+)
+
+balanced_train <- train %>% 
+   group_by(ten_year_chd) %>% 
+   slice_sample(n = min_train)
+
+
+min_test <- min(
+   nrow(test[test$ten_year_chd == 1,]),
+   nrow(test[test$ten_year_chd == 0,])   
+)
+
+balanced_test <- test %>% 
+   group_by(ten_year_chd) %>% 
+   slice_sample(n = min_test)
+
+
+# Full model with the selected variables
+EVs  <- c(
+   "male", "prevalent_hyp", "bp_meds", "education",
+   "age", "sys_bp", "bmi", "glucose", "tot_chol"
+)
+
+
+# Remove education, bp_meds, bmi, tot_chol since they have
+# no effect on the model
+EVs  <- c(
+   "male", "prevalent_hyp",
+   "age", "sys_bp", "glucose"
+)
+
+
+# Remove prevalent_hyp since it is only marginally significant
+EVs  <- c(
+   "male", "age", "sys_bp", "glucose"
+)
+
+
+# The stepwise regression - below - identified cigs_per_day as an important factor.
+# I will therefore add it to the model.
+EVs  <- c(
+   "male", "age", "sys_bp", "glucose", "cigs_per_day"
+)
+
+
+phat <- do_logistic_regression(
+   EVs, 
+   train_data = balanced_train, test_data = balanced_test,
+   thresh = 0.4
+)
+
+plot_ROC(balanced_test, phat)
+
+```
+
+# CHD Prediction app
+
+```{r include=F}
+
+# Calculate the risk of 10-years CHD
+# Fit the model to be given to the app
+
+EVs  <- c(
+   "male", "age", "sys_bp", "glucose", "cigs_per_day"
+)
+
+fit <- glm(
+   ten_year_chd ~ male + age + sys_bp + glucose + cigs_per_day,
+   family = "binomial",
+   data = df
+)
+
+fit %>% summary()
+
+fit$coefficients
+
+bd = "/Users/leonardo/My Drive/turing_college/Modules/Linear_and_Logistic_Regression/"
+saveRDS(fit, paste0(bd, "CHD_model.rds"))
+
+```
+
+Use the following model - estimated on the whole dataset - to predict the 10-year risk of CHD according to the given input.
+
+$$
+logOdds_{10yr-CHD-risk} = -8.671 + 0.51*male + 0.061*age + 0.0173*sys\_bp + 0.00758*glucose + 0.0204 * cigs\_per\_day
+$$
+
+$$
+p = \frac{e^{logOdds}}{1 + e^{logOdds}}
+$$
+
+
+**NB: only for illustrational purposes. Read and accept the following Disclaimer first**
+
+```{r echo=FALSE}
+knitr::include_app("https://agronomous.shinyapps.io/chd_risk_app/", height = 1100)
+```
+
+
+
+
+```{r, include=F}
+
+# # my interactive ROC curve - work in progress
+
+# ROC_interactive <- function(phat, actual, granularity) {
+# 
+#    # Function to calculate TP, TN, FP, FN, to be mapped in the pa tibble below
+#    calculate_metrics <- function(df) {
+#       df %>%
+#          mutate(predicted = ifelse(phat >= threshold, 1, 0)) %>%
+#          mutate(is_TP = ifelse(actual == 1 & predicted == 1, 1, 0)) %>%
+#          mutate(is_TN = ifelse(actual == 0 & predicted == 0, 1, 0)) %>%
+#          mutate(is_FP = ifelse(actual == 0 & predicted == 1, 1, 0)) %>%
+#          mutate(is_FN = ifelse(actual == 1 & predicted == 0, 1, 0)) %>%
+#          select(-phat,-actual,-predicted) %>%
+#          summarize(
+#           TP = sum(is_TP),
+#           TN = sum(is_TN),
+#           FP = sum(is_FP),
+#           FN = sum(is_FN)
+#          )
+#    }
+# 
+#    pa <- tibble(phat = phat, actual = test$ten_year_chd)
+# 
+#    # Calculate confusion matrix metrics for each level of granularity
+#    pa <- pa %>%
+#    cross_join( tibble(thr = seq(0, 1, granularity)) ) %>%
+#    group_by(thr) %>%
+#    mutate(threshold = thr) %>%
+#    nest() %>%
+#    mutate(confusion = map(data, ~ calculate_metrics(.x))) %>%
+#    select(-data) %>%
+#    unnest(confusion) %>%
+#    ungroup() %>%
+#    mutate(
+#       Sensitivity = TP / (TP + FN),
+#       Specificity = TN / (TN + FP),
+#       FPR = 1 - Specificity
+#    )
+# 
+#    return(pa)
+# 
+# }
+# 
+# 
+# pa <- ROC_interactive(phat, test$ten_year_chd, 0.1)
+# 
+# library(plotly)
+# 
+# pa$Sensitivity <- round(pa$Sensitivity, 2)
+# pa$FPR <- round(pa$FPR, 2)
+# 
+# # Create the plot using plot_ly
+# plot_ly(data = pa, x = ~FPR, y = ~Sensitivity, text = ~paste("Threshold: ", thr, "<br>Sensitivity: ", Sensitivity, "<br>FPR: ", FPR),
+#         type = "scatter", mode = "lines+markers", marker = list(size = 10), line = list(shape = "hv")) %>%
+#   layout(title = "ROC Curve", xaxis = list(title = "False Positive Rate (FPR)"), yaxis = list(title = "Sensitivity"))
+
+
+```
+
+
+
+```{r, eval=F, include=F}
+
+# Code of the shiny app
+
+library(shiny)
+
+# Read the disclaimer text from the file
+disclaimer_text <- readLines("disclaimer.txt", warn = FALSE)
+disclaimer_text <- paste(disclaimer_text, collapse = " ")
+
+# Define the UI
+ui <- fluidPage(
+    titlePanel("Probability of CHD in 10 years"),
+    sidebarLayout(
+        sidebarPanel(
+            radioButtons("gender", "Select Gender:",
+                         choices = c("Male", "Female"),
+                         selected = "Male"),
+            sliderInput("age", "Enter Age:", min = 0, max = 100, value = 50),
+            sliderInput("sys_bp", "Enter Systolic Blood Pressure:",
+                        min = 50, max = 250, value = 120),
+            sliderInput("glucose", "Enter Glucose Level:",
+                        min = 0, max = 700, value = 100),
+            sliderInput("cigs_per_day", "Enter Number of Cigarettes per Day:",
+                        min = 0, max = 100, value = 10),
+            actionButton("calculate", "Calculate Probability"),
+            uiOutput("result_box") # Placeholder for the formatted result box
+        ),
+        # Show a plot of the generated distribution
+        mainPanel(
+            modalDialog(
+                tags$p(
+                    disclaimer_text,
+                    style = "font-size: 12px; text-align: center;"
+                ),
+                title = "Disclaimer",
+                footer = modalButton("I read, understood and agree to the terms of use")
+                size = "l",
+                easyClose = FALSE
+            ),
+            # plotOutput("distPlot"),
+            tags$p(
+                disclaimer_text,
+                style = "font-size: 12px; text-align: center;"
+            )
+        ),
+        
+    )
+)
+
+# Define the server
+server <- function(input, output) {
+    
+    # Load the model from the file
+    fit <- readRDS("CHD_model.rds")
+    
+    observeEvent(input$calculate, {
+        # Prepare the input data for prediction
+        new_data <- data.frame(
+            male = factor(ifelse(input$gender == "Male", 1, 0)),
+            age = input$age,
+            sys_bp = input$sys_bp,
+            glucose = input$glucose,
+            cigs_per_day = input$cigs_per_day
+        )
+        
+        # Predict the probability using the logistic regression model
+        probability <- predict(fit, newdata = new_data, type = "response")
+        
+        # Format the probability as percentage with one decimal point
+        formatted_probability <- sprintf("%2.2f", probability)
+        
+        # Output the formatted probability box
+        output$result_box <- renderUI({
+            tags$div(
+                style = "font-size: 24px; text-align: center; border: 0px solid black; padding: 10px;",
+                paste("Probability of CHD in 10 years:", formatted_probability)
+            )
+        })
+    })
+}
+
+# Run the Shiny app
+shinyApp(ui, server)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
