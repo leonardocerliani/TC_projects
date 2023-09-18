@@ -4,9 +4,7 @@ This folder contains a selection of the projects completed for the degree of Dat
 
 <!-- ![](TC_banner.png) -->
 
-<!-- <img src="TC_banner.png" width="150"> -->
-
-<a href="https://www.turingcollege.com/"><img src="TC_banner.png"  width="150"></a>
+<img src="TC_banner.png" width="250">
 
 
 [**Product Analysis**](https://leonardoc.netlify.app/showcase/product_analysis_psaraki/product_analysis) 
