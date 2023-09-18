@@ -2,7 +2,12 @@
 # Business Data Analytics projects
 This folder contains a selection of the projects completed for the degree of Data Analyst at [Turing College](https://www.turingcollege.com/).
 
-![](TC_banner.png)
+<!-- ![](TC_banner.png) -->
+
+<!-- <img src="TC_banner.png" width="150"> -->
+
+<a href="https://www.turingcollege.com/"><img src="TC_banner.png"  width="150"></a>
+
 
 [**Product Analysis**](https://leonardoc.netlify.app/showcase/product_analysis_psaraki/product_analysis) 
 [:atom:](https://github.com/leonardocerliani/TC_projects/tree/main/Product_Analysis_TC)
