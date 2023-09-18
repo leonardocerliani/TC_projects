@@ -5,7 +5,7 @@ A logistic regression approach to investigate the [Framingham dataset](https://w
 The Framingham coronary heart disease (CHD) study has been running for several decades. Its aim is to identify physical dispositions and life habits which can result in a risk of developing CHD in a 10-year time.
 
 ### Quick links
-- [Analysis report](https://tc-logistic-regression.netlify.app/#CHD_Prediction_app) which includes also the R code and a shiny app implementing the model[^1].
+- [Analysis report](https://leonardoc.netlify.app/showcase/framingham_chd_logistic_regression/graded_task_logistic_regression_v5) which includes also the R code and a shiny app implementing the model[^1].
 
 - [Results presentation](presentation_framingham.pdf)
 
@@ -14,14 +14,13 @@ The Framingham coronary heart disease (CHD) study has been running for several d
 
 ### Main Results
 
-- Since we are trying to predict the risk of a serious health condition - which can have profound lifestyle and economical impact on the life of the patients - the analysis was aimed at maximising sensitivity even at the cost of inflating false negatives.
+- **The final model correctly predicts risk of CHD in 10 years in 83% of the people who are actually at risk (sensitivity)** when the threshold for binary classification is set at 0.1
 
-The final model correctly predicts risk of CHD in 10 years in 83% of the people who are actually at risk (i.e. sensitivity) when the threshold for binary classification is set to 0.1
+- The choice of this threshold (0.1) leads to many false positives, however given the potential life-threatening implications of false negatives - and the relatively simple continous monitoring of the patients with positive prediction - the choice obviously falls on maximising the sensitivity.
 
-This model is simple, containing only easily retrievable variables: sex, age, systolic blood pressure, glucose and # cigarettes per day
+- **The model is simple, contaning only easily retrievable variables**: sex, age, systolic blood pressure, glucose and smoking habits
 
-Assumption of blood pressure medicaments does not appear to decrease the odds of CHD
+- Assumption of blood pressure medicaments does _not_ appear to decrease the odds of CHD risk
 
-The explained variance is low (17% max). Other unexplored variables such as alcohol consumption, stress, wealth, might improve fit and performance
+- The amount of explained variance is moderate (17%). Other unexplored variables such as alcohol consumption, stress and wealth (among others) might improve model fit and performance.
 
-Sex has probably a relatively low impact, as revealed by a balanced sample
