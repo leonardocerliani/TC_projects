@@ -1,4 +1,4 @@
-# Data Analytics projects
+# Business Data Analytics projects
 This folder contains a selection of the projects completed for the degree of Data Analyst at [Turing College](https://www.turingcollege.com/).
 
 [**Product Analysis**](https://leonardoc.netlify.app/showcase/product_analysis_psaraki/product_analysis) 
