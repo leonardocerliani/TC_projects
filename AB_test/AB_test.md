@@ -1,3 +1,5 @@
+uffa
+
 # Notes on AB testing
 
 _**Preliminary note**: the actual development of the Turing College project is [in this Notion page](https://www.notion.so/A-B-Testing-project-447e599c683e456e9d9fa337b7655da5?pvs=4). Per se, the calculations underlying an AB test can be quite simple, while it is important to have a good representation of the general framework. Therefore here I decided to instead leave some notes on AB testing which focus more on the latter._
