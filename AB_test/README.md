@@ -1,4 +1,6 @@
+# Notes on AB testing
 
+_**Preliminary note**: the actual development of the Turing College project is [in this Notion page](https://www.notion.so/A-B-Testing-project-447e599c683e456e9d9fa337b7655da5?pvs=4). Per se, the calculations underlying an AB test can be quite simple, while it is important to have a good representation of the general framework. Therefore here I decided to instead leave some notes on AB testing which focus more on the latter._
 
 
 
@@ -8,7 +10,9 @@
 
 The stats underneath are usually very simple - in the basic case **a two independent samples t-test or chi-square test**.
 
-Importantly, **the actual testing should be preceded by a (statistical) power analysis to determine how or whether it’s worth to run the test**, as this can cost considerable time and money, while the planning can be done quickly with pen and paper (and maybe a pocket calculator).
+Importantly, **the actual testing should be preceded by a power analysis** to appropriately design the experiment: undetected false positives and false negatives can result in a considerable waste of time and money. A power analysis will help to limit the chance of either of them (and can be swiftly carried out with in a few lines or R code, as we will see below).
+
+If one of the two versions turns out to be significantly better than the other, it is still worth paying attention to the **confidence intervals** around the point estimate of the difference between A and B, as this informs us about the _range_ of the outcome we can expect after having implemented the chosen version.
 
 
 ## Case study
@@ -20,13 +24,15 @@ To understand whether this is a good idea, you implement both versions and measu
 
 ![](imgs/AB_cafeterias.png)
 
-The point is to estimate whether the new image will draw more users to click on the button for directions to your cafeteria.
+The aim is to estimate whether the new image will draw more users to click on the button for directions to your cafeteria.
 
 This can be tested using an A/B test.
 
 
 ## Power analysis
-The data onto which the test is run are usually proportion of conversion - e.g. to subscription or purchase. The absolute difference between them however will tell us little about the probability that that difference has been achieved by chance (i.e. null hypothesis). 
+The data onto which the test is run are usually proportion of conversion - e.g. to subscription or purchase. **In our case, it is the proportion of people finding our cafeteria on google maps, and deciding to click on the directions to the cafeteria in either for picture A (cafeteria as a friends-meeting place) or picture B (cafeteria as a shared workspace)**.
+
+The absolute difference between them however will tell us little about the probability that that difference has been achieved by chance (i.e. null hypothesis). 
 
 In order to decide whether the difference in conversion is worth exploring, it is important to first decide on a few items:
 
@@ -34,9 +40,9 @@ In order to decide whether the difference in conversion is worth exploring, it i
 
 - **Significance level**, or _alpha_ : what is the risk I want to accept to detect a difference which is actually due to chance (Type I error)?  Usually alpha is set to 0.05 or 0.01.
 
-- **Power** : what is the risk I want to accept _not_ to find an actual difference (beta)? Power is 1-beta, and it is usually set at 0.8. This denotes the probability of finding an effect which is actually present, rather than due to chance.
+- **Power** : what is the risk I want to accept _not_ to find an actual difference (beta : risk of Type II errors)? Power is 1-beta, and it is usually set at 0.8. This denotes the probability of finding an effect which is actually present, rather than due to chance.
 
-- **Sample size** : this is the amount of data points I need to have in order to detect a significant and actual difference - of the expected size - given the chosen significance level and power. In practice, this means how much time do I need to wait to know whether A is more effective than B or _vice versa_. Note that bigger differences require smaller samples (i.e. less time), however this might lead to _failure to detect_ a difference smaller than the expected. 
+- **Sample size** : this is the amount of data points I need to have in order to detect a significant and actual difference - of the expected size - given the chosen significance level and power. In practice, this means how much time do I need to wait to know whether A is more effective than B or _vice versa_. **Note that _bigger_ (expected) differences require _smaller_ samples (i.e. less time)**, however this might lead to _failure to detect_ a difference smaller than the expected. 
 
 Probably the most important information here is the fact that these four elements are all linked to each other: changing one will affect the others. 
 
@@ -44,13 +50,12 @@ Probably the most important information here is the fact that these four element
 
 Balancing these four elements in order to plan an effective A/B experiment is the purpose of power analysis. 
 
-For instance, let's say that each day 200 people click on the image of your cafeteria every day. Out of these, 30 people (15%) "convert" to asking directions to reach your cafeteria. By changing the image in google maps, you hope to convince 40% more people to ask for directions (i.e. 42 people, or 21%). 
+For instance, let's say that each day 200 people click on the image of your cafeteria every day. Out of these, 30 people (15%) "convert" to asking directions to reach your cafeteria. By changing the image in google maps, you hope to convince 40% more people to ask for directions (i.e. 42 people, or 21%).
 
 If we keep the sigificance level and power at 0.01 and 0.8 respectively, for how many days should you run the test to assess the efficacy of either options in attracting people to your cafeteria?
 
-```{r}
-library(tidyverse)
 
+```r
 clickers_per_day = 200
 pA = 30/clickers_per_day
 uplift = 0.4
@@ -59,9 +64,30 @@ pB = pA * (1 + uplift)
 
 pw <- power.prop.test(p1=pA, p2=pB, power=0.8, alternative='two.sided', sig.level=0.01)
 pw
+```
 
+```
+## 
+##      Two-sample comparison of proportions power calculation 
+## 
+##               n = 956.2356
+##              p1 = 0.15
+##              p2 = 0.21
+##       sig.level = 0.01
+##           power = 0.8
+##     alternative = two.sided
+## 
+## NOTE: n is number in *each* group
+```
+
+```r
 Ndays_runtime <- pw$n / 200
+
 cat("Experiment runtime:", Ndays_runtime * 2,"days") # the computed sample size is for *each condition!*
+```
+
+```
+## Experiment runtime: 9.562356 days
 ```
 
 This is great news. If a 40% uplift is expected/desired, it would take about 10 days to run the test and decide which version of the cafeteria photo to use.
@@ -70,8 +96,8 @@ At the same time, this will prevent us to detect an uplift < 40%. Detecting a sm
 
 Let's see how many participants would be required to detect an A/B effect of different sizes - with a power of 0.8 and a significance level of 0.01.
 
-```{r}
 
+```r
 power_range <- function(pA, uplift) {
  pB = pA * (1+uplift)
  pw <- power.prop.test(p1=pA, p2=pB, power=0.8, alternative='two.sided', sig.level=0.01)
@@ -86,8 +112,9 @@ sample_size <- uplift_list %>% map_dbl(~ power_range(pA, .x)) %>% round
 
 bp <- barplot(sample_size, names.arg = uplift_list, ylim = c(0, max(sample_size) + 1000))
 text(bp, sample_size, labels = sample_size, pos = 3, cex = 0.8, col = "black")
-
 ```
+
+![](imgs/power_range.png)<!-- -->
 
 After considering these alternative uplifts, you decide that an uplift of 35% in conversions would still be interesting/profitable for your cafeteria, and it would take only a few days more wrt to the initial 40% uplift expectations (1229 * 2 / 200 = less than two weeks). You therefore decide to to run the experiment for two weeks.
 
@@ -97,8 +124,8 @@ After considering these alternative uplifts, you decide that an uplift of 35% in
 
 After two weeks, you finally have your data, and can run the actual test. For simplicity, let's calculate the total number of visitors/conversions by multiplying the respective average value times 14 (days).
 
-```{r}
 
+```r
 Ndays_runtime = 14
 
 N_A = 190
@@ -115,7 +142,14 @@ df <- tibble(
  mutate(conversion_rate = (n_conversions / N_visitors) %>% round(4))
 
 df %>% print()
+```
 
+```
+## # A tibble: 2 × 4
+##   photo n_conversions N_visitors conversion_rate
+##   <chr>         <dbl>      <dbl>           <dbl>
+## 1 B               532       2590           0.205
+## 2 A               448       2660           0.168
 ```
 
 
@@ -144,8 +178,8 @@ Finally, we compare the obtained Z with the critical value for the chosen signif
 
 Let's implement this:
 
-```{r}
 
+```r
 nconv_B <- df$n_conversions[1]
 nconv_A <- df$n_conversions[2]
 
@@ -167,6 +201,10 @@ pval <- 2 * (1 - pnorm(abs(z)) )
 print(pval)
 ```
 
+```
+## [1] 0.000584267
+```
+
 A quick graphical display of the comparison, together with all the elements of the calculations, can be obtained using the [AB Testguide website](https://abtestguide.com/calc/)
 
 ![](imgs/abtestguide.png)
@@ -179,17 +217,30 @@ $$\chi^2 = \sum{\frac{(O_i - E_i)^2}{E_i}}$$
 In this case we can either use the `prop.test()` function, or the `chisq.test()` function.
 
 
-```{r}
 
+```r
 ABresult <- prop.test(df$n_conversions, df$N_visitors, correct = F, conf.level = 0.95)
 print(ABresult)
+```
 
+```
+## 
+## 	2-sample test for equality of proportions without continuity correction
+## 
+## data:  df$n_conversions out of df$N_visitors
+## X-squared = 11.823, df = 1, p-value = 0.0005851
+## alternative hypothesis: two.sided
+## 95 percent confidence interval:
+##  0.01590500 0.05806371
+## sample estimates:
+##    prop 1    prop 2 
+## 0.2054054 0.1684211
 ```
 
 If we want to use the chi-square test function directly, we need to reshape our observation into a contingency table.
 
-```{r}
 
+```r
 contingency_table <- matrix(c(n_conv_B, n_conv_A, N_B - n_conv_B, N_A - n_conv_A), ncol = 2)
 colnames(contingency_table) <- c("YES_Conv", "No_Conv")
 rownames(contingency_table) <- c("B", "A")
@@ -199,7 +250,15 @@ contingency_table <- contingency_table * Ndays_runtime
 chisq.test(contingency_table, correct = F)
 ```
 
-The final results are of course exactly the same, and they are (as expected) comparable to those obtained using the normal approximation of the binomial distribution.
+```
+## 
+## 	Pearson's Chi-squared test
+## 
+## data:  contingency_table
+## X-squared = 9.7459, df = 1, p-value = 0.001797
+```
+
+The final results are of course exactly the same, and they are (as expected) comparable to those obtained using the _z_ test for the difference between two independent proportions.
 
 <br>
 
@@ -233,8 +292,8 @@ The CI can be used for inference, alternatively to the null-hypothesis testing a
 
 In our case we can calculate the CI as follows:
 
-```{r}
 
+```r
 # for a 95% confidence level
 alpha = 0.05
 z_CL <- qnorm(1-(alpha/2))
@@ -246,7 +305,10 @@ CI_low  <- (pB - pA) - MOE
 CI_high <- (pB - pA) + MOE
 
 cat("95% CI around the difference between pB and PA: [",CI_low,CI_high,"]")
+```
 
+```
+## 95% CI around the difference between pB and PA: [ 0.015905 0.05806371 ]
 ```
 
 As expected, this CI does _not_ contain 0, therefore we reject the null hypothesis of no difference between the two conversion rates.
@@ -255,6 +317,35 @@ Importantly, the CI can also be used to compare what we expect in the future - b
 
 For instance, one month after we implement photo B (cafeteria as a shared workplace), we might get a 19% increase in conversion rates, rather than the expected 20.5%. While this might disappoint us, it is indeed within the range described by our confidence interval.
 
-In fact, our CI ranges between `r CI_low` and `r CI_high`. This means that while our point estimate for the conversion rates is `r paste0(round(pB*100,2),"%")`, based on our CI we can expect is to range from `r paste0(round((pA + CI_low)*100,2),"%")` to `r paste0(round((pA + CI_high)*100,2),"%")`
+In fact, our CI around the difference in coversion rates (3.7%) ranges between 1.59% and 5.81%. This means that while our point estimate for the conversion rates is 20.54%, based on our CI we can expect is to range from 18.43% (pA + CI_low) to 22.65% (pA + CI_high).
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Links
+[Kelly Wortham's Sample Size Calculation - Myth Buster Edition](https://www.searchdiscovery.com/blog/sample-size-calculation-myth-buster-edition/) and the associated [calculator app](https://www.searchdiscovery.com/how-we-help/services/optimization/sample-size-calculator/)
+
+[AB Testguide calculator](https://abtestguide.com/calc/). Scroll to the bottom of the page for some technical articles.
+
+[Georgiev Intervals and p-values for percent change](https://blog.analytics-toolkit.com/2018/confidence-intervals-p-values-percent-change-relative-difference/)
+
+[MLwiki binomial proportion tests](http://mlwiki.org/index.php/Binomial_Proportion_Tests)
+
+[MLwiki binomial proportion confidence intervals](http://mlwiki.org/index.php/Binomial_Proportion_Confidence_Intervals)
+
+[Confidence intervals in A/B testing results](https://www.linkedin.com/pulse/confidence-intervals-ab-testing-results-surbhi-jain/)
+
+[HBR refresher on A/B testing](https://hbr.org/2017/06/a-refresher-on-ab-testing)
+
+[Khan on CI for the difference between proportions](https://www.khanacademy.org/math/ap-statistics/xfb5d8e68:inference-categorical-proportions/two-sample-z-interval-proportions/v/confidence-intervals-for-the-difference-between-two-proportions)
