@@ -28,7 +28,7 @@ After conducting a 360º exploration of various aspects of this dataset, I decid
 
 [Open the dashboard for exploration](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2/SalesPersonsPerformanceperUSTerritory)
 
-[![](dashboard_exploration_snapshot.png)](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2/SalesPersonsPerformanceperUSTerritory)
+[![](dashboard_exploration.gif)](https://public.tableau.com/app/profile/leonardo.cerliani/viz/SP_Geo_v2/SalesPersonsPerformanceperUSTerritory)
 
 
 ### Key Insights
