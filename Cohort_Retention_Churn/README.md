@@ -63,7 +63,6 @@ distinct_users as
 -- first-week subscriptions for each cohort
 first_week_subscriptions as (
   select
-    max(cohort),
     cohort, 
     count(*) as n_first_week,
   from distinct_users
