@@ -1,7 +1,7 @@
 # Product Analysis
 Analysis of session duration on the data from the [Google Merchandise Store](https://shop.googlemerchandisestore.com/) in the period between 2020-11-01 and 2021-01-30.
 
-**[Analysis Report](https://tc-product-analysis.netlify.app/)**
+**[Full Analysis Report](https://tc-product-analysis.netlify.app/)**
 
 All the material can be downloaded at the following links:
 - [SQL query](https://tc-product-analysis.netlify.app/product_analysis_SQL_query.sql) - also available at the end of this page
