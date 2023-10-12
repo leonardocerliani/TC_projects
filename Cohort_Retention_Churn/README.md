@@ -223,7 +223,67 @@ pivot
 order by cohort
 ```
 
-However I find it potentially cumbersome, especially if we want to modify the number of weeks to run the cohort analysis on
+However I find it potentially cumbersome, especially if we want to modify the number of weeks to run the cohort analysis on.
 
 
 ## Full query
+
+```sql
+with
+distinct_users as 
+(
+  select 
+    distinct user_pseudo_id,
+    date_trunc(subscription_start, WEEK) as cohort,
+    date_trunc(subscription_end, WEEK) as end_week,
+  from 
+    `turing_data_analytics.subscriptions`
+  -- only consider the period of 6 weeks ending on 2021-02-07
+  where date_diff('2021-02-07', subscription_start, WEEK) <= 6
+  order by cohort
+),
+
+-- first-week subscriptions for each cohort
+first_week_subscriptions as (
+  select
+    cohort, 
+    count(*) as n_first_week,
+  from distinct_users
+  group by cohort
+),
+
+-- n_churns for each week for each cohort
+churns_by_week as (
+  select
+    cohort,
+    end_week,
+    date_diff(end_week, cohort, WEEK) + 1 as elapsed_weeks,
+    countif(end_week is not null) as n_churns,
+  from distinct_users
+  group by
+    cohort, end_week
+  order by cohort, end_week
+),
+
+-- join cohort size (n_first_week) and n_churns per week per cohort
+joint_cohort_churns_table as
+(
+  select
+    fw.cohort,
+    fw.n_first_week, 
+    ch.elapsed_weeks,
+    ch.n_churns,
+    -- calculate the cumulative sum of churns over subsequent weeks (later used to calculate retention)
+    sum(ch.n_churns) over (partition by ch.cohort order by ch.end_week) as cumsum_churns
+  from first_week_subscriptions fw join churns_by_week ch on fw.cohort = ch.cohort
+)
+
+-- calculate the final measure of retention and churn
+select 
+  cohort, 
+  n_first_week, 
+  case when elapsed_weeks IS NULL then 0 else elapsed_weeks end as elapsed_weeks, 
+  n_churns,
+  n_first_week - cumsum_churns as n_retention
+from joint_cohort_churns_table
+```
