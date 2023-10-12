@@ -1,0 +1,1227 @@
+---
+title: "Olist db"
+subtitle: "Monetization Analysis Graded Task"
+author: "Leonardo Cerliani"
+date: "8/23/2023"
+output:
+  html_document:
+    self_contained: true
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: hide
+    highlight: pygments
+    theme: cerulean
+    css: styles.css
+---
+
+
+```{r, message=F}
+
+library(tidyverse)
+library(bigrquery)
+library(wesanderson)
+library(plotly)
+library(hrbrthemes)
+library(patchwork)
+library(flextable)
+library(ggstatsplot)
+library(GGally)
+library(viridis)
+library(lubridate)
+library(geosphere)
+
+project_id <- "tc-da-1"
+dataset_id <- "olist_db"
+
+con <- dbConnect(
+  bigrquery::bigquery(),
+  project = project_id,
+  dataset = dataset_id
+)
+
+# to close the connection: dbDisconnect(con)
+
+```
+
+
+```{sql connection=con, output.var="df_freight_ratio"}
+
+select
+  price, freight_value,
+  round(freight_value / (freight_value + price),2) as freight_ratio,
+from
+  `olist_db.olist_order_items_dataset`
+
+```
+
+
+# Distribution of freight ratio
+
+```{r, warning=FALSE}
+
+df <- df_freight_ratio
+
+# # Simple histogram - refined below by calculating the values manually
+# hist(df$freight_ratio, main = "Number of order in different ranges of shipping cost",
+#           xlab = "freight ratio = freight cost / (price + freight cost)",
+#           ylab = "number of orders", col = "steelblue", border = "white")
+# abline(v = 0.19, col = "red")
+# text(x = 0.19, y = par("usr")[4] - 2500, labels = "Median = 0.19", pos = 4, col = "red")
+
+
+# Calculate revenue and number of orders - as well as their proportion and 
+# cumulative sum - for different segments of freight ratio
+fr_bin_value <- 0.05
+
+ddf <- df %>%
+  mutate(fr_bin = cut(freight_ratio, breaks = seq(0, 1, by = fr_bin_value)) ) %>%
+  group_by(fr_bin) %>% 
+  mutate(fr_bin = max(freight_ratio) ) %>% 
+  reframe(
+    revenue = sum(price),
+    n_orders = n(),
+    prop_orders = n() / nrow(df),
+    prop_total_revenue = sum(price) / sum(df$price)
+  ) %>%
+  na.omit() %>% 
+  arrange(fr_bin) %>% 
+  mutate(
+    cum_revenue = cumsum(revenue),
+    cum_prop_revenue = cumsum(prop_total_revenue)
+  )
+
+
+
+scale_dual_axis = 0.2
+
+ddf %>% 
+  ggplot(aes(x = fr_bin)) +
+  geom_bar(aes(y = prop_orders), stat = "identity", fill = "steelblue", color = "white", width = fr_bin_value) +
+  geom_line(aes(y = cum_prop_revenue*scale_dual_axis), color = "red") +
+  scale_y_continuous(
+    sec.axis = sec_axis(~./scale_dual_axis, name = "% Cumulative Revenue", breaks = seq(0, 1, 0.1))
+  ) +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(0, 1, fr_bin_value)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_cartesian(xlim = c(0, 0.8)) +
+  labs(
+    title = "Orders for different segments of Freight Ratio", 
+    x = "Freight ratio segments",
+    y = "Proportion of total Orders"
+  ) + theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()
+  )
+
+
+```
+
+
+
+
+
+```{r}
+df %>% 
+ mutate(price_qtile = ntile(price, 4)) %>% 
+ group_by(price_qtile) %>% 
+ mutate(price_range = paste0(min(price),"-",max(price)) %>% factor) %>% 
+ggplot(aes(x = freight_ratio, fill = as.factor(price_range)) ) +
+  geom_histogram(binwidth = 0.02, alpha = 1) +
+  # stat_bin(aes(y=..count../sum(..count..)),geom="step", binwidth = 0.02) +
+  # geom_density(alpha = 0.7) +
+  # facet_wrap(~ price_range, ncol = 2) +
+  labs(title = "Histogram of Freight Ratio by Price Range",
+       x = "Freight Ratio", 
+       y = "Number of Orders",
+       fill = "Segments of orders \nby value (quartiles)") +
+  theme_modern() +
+  scale_fill_manual(values = wesanderson::wes_palette("Zissou1")) +
+  theme(legend.position = c(0.7,0.7))
+
+
+
+# p <- df %>% 
+#  mutate(price_qtile = ntile(price, 4)) %>% 
+#  group_by(price_qtile) %>% 
+#  mutate(price_range = paste0(min(price),"-",max(price)) %>% factor) %>% 
+# ggplot(aes(x = freight_ratio, fill = as.factor(price_range)) ) +
+#   # geom_histogram(binwidth = 0.02, alpha = 1) +
+#   # stat_bin(aes(y=..count../sum(..count..)),geom="step", binwidth = 0.02) +
+#   geom_density(alpha = 0.7) +
+#   # facet_wrap(~ price_range, ncol = 2) +
+#   # labs(title = "Histogram of Freight Ratio by Price Range",
+#   #      x = "Freight Ratio", 
+#   #      y = "Number of Orders",
+#   #      fill = "Segments of orders \nby value (quartiles)") +
+#   theme_void() +
+#   scale_fill_manual(values = wesanderson::wes_palette("Zissou1")) +
+#   theme(legend.position = c(0.7,0.7))
+# 
+# p + guides(fill = "none")
+# 
+# ggsave("/Users/leonardo/Dropbox/turing_college/Endorsement/plot.pdf", plot = p, device = "pdf")  # Adjust width and height as needed
+
+```
+
+
+```{r}
+
+# Freight ratio in 4 categories of products of increasing price
+df %>% 
+ mutate(price_qtile = ntile(price, 4)) %>% 
+ group_by(price_qtile) %>% 
+ mutate(price_range = paste0(min(price),"-",max(price)) %>% factor) %>% 
+ ggplot(aes(x = price_range, y = freight_ratio)) +
+ geom_boxplot(color = "steelblue") +
+ stat_summary(
+    fun.data = function(y) data.frame(y = median(y), label = median(y)),
+    geom = "text", hjust = 4, vjust = 0.5, color = "black", size = 3
+  ) +
+ theme_minimal() +
+ labs(
+   title = "Freight ratio for orders of different value",
+   x = "Price range (quartiles)",
+   y = "Freight ratio" 
+ )
+```
+
+
+
+```{r}
+
+# Freight ratio decrease very quick with order value
+df %>% 
+ ggplot(aes(x = price, y = freight_ratio)) +
+ geom_point(alpha = 0.1, color = "steelblue") +
+ # theme_minimal() +
+ theme_minimal() +
+ scale_x_continuous(
+  trans = "log", 
+  labels = function(x) round(x,2),
+  breaks = 2^(0:12)
+ ) + 
+  labs(
+    title = "Very high shipping fees for orders < 100 BR$",
+    x = "Order value (log)",
+    y = "Freight ratio"
+  )
+
+
+# # Alternative representation: 2D histogram (to highlight counts)
+# df %>% 
+#   # filter(freight_ratio >= 0.2) %>%
+#   ggplot(aes(x = freight_ratio, y = price)) +
+#   geom_hex(bins = 30) +
+#   scale_fill_continuous(type = "viridis", trans = "log", breaks = 10^seq(4)) +
+#   scale_y_continuous(trans = "log", breaks = 10^seq(3) ) +
+#   scale_x_continuous(breaks = seq(0,1,0.1)) +
+#   theme_minimal() +
+#   coord_fixed(ratio = 0.1) +
+#   theme(
+#     axis.text.x = element_text(size = 12),
+#     axis.text.y = element_text(size = 12),
+#     panel.grid.minor = element_blank()
+#   )
+
+
+# # Original (not log transformed) values
+# df %>%
+#  filter(freight_ratio > 0, price < 1500) %>%
+#  sample_frac(0.1) %>%
+#  ggplot(aes(x = price, y = freight_ratio)) +
+#  geom_point(alpha = 0.1, color = "steelblue") +
+#  theme_minimal()
+
+```
+
+
+```{r, include=F, eval=F}
+
+# Orders count and % of revenue for different value segments
+
+price_binwidth = 10 # in BR$
+
+ddf <- df %>%
+  filter(price <= 300) %>%
+  mutate(price_bin = cut(price, breaks = seq(0, max(price), by = price_binwidth)) ) %>%
+  group_by(price_bin) %>% 
+  reframe(
+    bin_price = max(price),
+    order_count = n(),
+    revenue = sum(price),
+    prop_orders = n() / nrow(df),
+    prop_total_revenue = sum(price) / sum(df$price)
+  ) %>%
+  select(-price_bin) %>% 
+  arrange(bin_price) %>% 
+  mutate(
+    cum_revenue = cumsum(revenue),
+    cum_prop_revenue = cumsum(prop_total_revenue)
+  )
+
+
+scale_dual_axis = 10000
+
+ddf %>% 
+  ggplot(aes(x = bin_price)) +
+    geom_bar(aes(y = order_count), stat = "identity",
+             fill = "steelblue", color = "white") +
+    geom_line(aes(y = cum_prop_revenue*scale_dual_axis), color = "red") +
+    theme_minimal() +
+    scale_y_continuous(
+      name = "Order Count",
+      sec.axis = sec_axis(~./scale_dual_axis, name = "% Cumulative Revenue", breaks = seq(0,1,0.1))) +
+    scale_x_continuous(breaks = c(seq(10,100,10),seq(120,180,20),seq(200,500,50)) ) +
+    labs(
+      title = "Order count and % of total revenue in different value segments",
+      x = "Price bin"
+    )
+
+# # Orders < 100 BR$ make for 27% of the revenue
+# df$price[df$price < 100] %>% sum() / df$price %>% sum 
+# 
+# # and 64% of all orders
+# df$price[df$price < 100] %>% length / df$price %>% length 
+
+```
+
+
+
+
+
+
+
+
+# Effect of lowering the freight ratio
+
+## Preliminary check
+```{r, include=F, eval=F}
+# Preliminary check: 
+# price values are log-normally distributed at every freight-ratio segment
+
+df %>%
+  filter(freight_ratio > 0) %>% 
+  # mutate(fr_05 = round(freight_ratio*20)/20) %>%
+  group_by(freight_ratio) %>% 
+  ggplot(aes(x = freight_ratio, y = log(price), group = freight_ratio)) + 
+  geom_boxplot(color = "steelblue") + 
+  theme_minimal()
+
+# df %>%
+#   group_by(freight_ratio) %>%
+#   reframe(
+#     AOV_log = (sum(log(price))/n()) %>% exp,
+#     AOV = sum(price)/n(),
+#     AOV_median = median(price),
+#     AOV_mean = mean(price),
+#     cnt = n()
+#   )
+
+```
+
+
+
+## Revenues after lowering FR of a given percent
+```{r}
+
+pct_decrease_fr <- 0.05
+
+ddf <- df %>% 
+  rename(fr = freight_ratio) %>%
+  filter(fr > 0) %>%
+  mutate(lower_fr = round(fr * (1 - pct_decrease_fr),2) ) %>% 
+  add_count(fr, name = "cnt_fr") %>% 
+  add_count(lower_fr, name = "cnt_lower_fr") %>% 
+  mutate(order_increase = cnt_lower_fr / cnt_fr) %>% 
+  group_by(fr) %>% 
+  reframe(
+    AOV = sum(price) / n(),
+    current_revenue = round(cnt_fr * AOV,2) %>% unique,
+    new_revenue = round(cnt_lower_fr * AOV,2) %>% unique
+  ) %>%
+  # express in deciles instead of percentiles of freight_ratio
+  mutate(ntile_fr = ntile(fr,10)) %>%
+  group_by(ntile_fr) %>% 
+  mutate(fr_range = paste(min(fr)*100,"-", max(fr)*100,"%")) %>% 
+  group_by(fr_range) %>% 
+  reframe(
+    current_revenue = sum(current_revenue),
+    new_revenue = sum(new_revenue)
+  ) 
+
+pct_increase_revenue <- round((sum(ddf$new_revenue) / sum(ddf$current_revenue) - 1) * 100,2)
+
+ddf %>% 
+  pivot_longer(cols = c("current_revenue","new_revenue"), names_to = "revenue") %>% 
+  ggplot(aes(x = fr_range, y = value, fill = revenue)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+        axis.title.y = element_text(angle = 90)) +
+  scale_y_continuous(labels = scales::comma_format()) +
+  labs(
+    title = paste0("Expected increase in revenue: ",pct_increase_revenue,"%"),
+    subtitle = paste0("when freight ratio is lowered by ",pct_decrease_fr*100,"%"),
+    x = "Freight ratio segment", y = "revenue per segment"
+  ) +
+  theme(
+    legend.position = c(0.7,0.7),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()
+  )
+
+
+```
+
+## Profits after lowering FR
+
+Olist generally takes a cut of 10% on the price of the item (shipping fees excluded).
+
+
+```{r}
+
+pct_decrease_fr <- 0.05
+
+ddf <- df %>% 
+  rename(fr = freight_ratio) %>%
+  filter(fr > 0) %>%
+  mutate(freight_discount = freight_value * pct_decrease_fr) %>% 
+  mutate(lower_fr = round(fr * (1 - pct_decrease_fr),2) ) %>% 
+  add_count(fr, name = "cnt_fr") %>% 
+  add_count(lower_fr, name = "cnt_lower_fr") %>% 
+  mutate(order_increase = cnt_lower_fr / cnt_fr) %>% 
+  group_by(fr) %>% 
+  reframe(
+    AOV = sum(price) / n(),
+    AO_freight_discount = sum(freight_discount) / n(),
+    current_revenue = round(cnt_fr * AOV,2) %>% unique,
+    new_revenue = round(cnt_lower_fr * AOV,2) %>% unique,
+    freight_loss = round(cnt_lower_fr * AO_freight_discount,2) %>% unique
+  ) %>%
+  # express in deciles instead of percentiles of freight_ratio
+  mutate(ntile_fr = ntile(fr,10)) %>%
+  group_by(ntile_fr) %>% 
+  mutate(fr_range = paste(min(fr)*100,"-", max(fr)*100,"%")) %>% 
+  group_by(fr_range) %>% 
+  reframe(
+    current_revenue = sum(current_revenue),
+    new_revenue = sum(new_revenue),
+    total_freight_loss = sum(freight_loss)
+  )
+
+
+# Applying the freight discount on all freight ratio segments
+ddf %>% 
+  mutate(
+    current_profit = current_revenue * 0.10,
+    new_profit = (new_revenue * 0.10) - total_freight_loss
+  ) %>% 
+  summarise(
+    pct_increase_profit = (sum(new_profit) - sum(current_profit)) / sum(current_profit) * 100,
+    profit_increase = sum(current_profit) * pct_increase_profit / 100
+  ) %>% flextable() %>% 
+  add_header_row(values = c("Apply discount to all segments",""))
+
+
+# Applying the freight discount only to the 10-18% freight ratio
+ddf %>% 
+  mutate(
+    current_profit = current_revenue * 0.10,
+    new_profit = ifelse(
+      fr_range == "10 - 18 %", new_revenue * 0.10, current_revenue * 0.10 
+    )
+  ) %>% 
+  summarise(
+    pct_increase_profit = (sum(new_profit) - sum(current_profit)) / sum(current_profit) * 100,
+    profit_increase = sum(current_profit) * pct_increase_profit / 100
+  ) %>% flextable() %>% 
+  add_header_row(values = c("Apply discount to 10-18% fr segment",""))
+
+
+
+```
+
+
+# Freight ratio and stars
+
+There is actually no difference in the reviews for sellers with different freight ratio
+
+```{sql connection=con, output.var="df_FR_stars"}
+
+select
+  t1.order_id,
+  round(t1.freight_value / (t1.freight_value + t1.price),2) as freight_ratio,
+  review_score as n_stars
+from `olist_db.olist_order_items_dataset` t1 join `olist_db.olist_order_reviews_dataset` t2
+  on t1.order_id = t2.order_id
+
+```
+
+
+```{r, warning=FALSE, message=F}
+
+# df_FR_stars %>% 
+#   mutate(qtile_FR = ntile(freight_ratio, 4)) %>%
+#   group_by(qtile_FR, n_stars) %>% 
+#   reframe(
+#     cnt = n()
+#   ) %>% 
+#   ungroup %>% group_by(qtile_FR) %>%
+#   reframe(
+#     n_stars = unique(n_stars),
+#     prop = cnt / sum(cnt)
+#   ) 
+
+ddf_stars <- df_FR_stars %>% 
+  mutate(qtile_FR = ntile(freight_ratio, 4)) %>% 
+  add_count(qtile_FR, name = "n_orders") %>% 
+  group_by(qtile_FR, n_stars) %>% 
+  reframe(
+    prop = unique(n() / n_orders)
+  )
+
+
+# # Quartiles of FR 
+# ddf_stars <- df_FR_stars %>% 
+#   mutate(qtile_FR = ntile(freight_ratio, 4))
+# 
+# ggbarstats(
+#   y = qtile_FR,
+#   x = n_stars,
+#   data = ddf_stars,
+#   results.subtitle = F,
+#   label = "percent",
+#   caption = F
+# )
+
+# High and low FR
+df_FR_stars %>% 
+  mutate(FR_segment = ifelse(freight_ratio <= 0.2, "low","high")) %>% 
+  ggbarstats(
+    y = FR_segment,
+    x = n_stars,
+    results.subtitle = F,
+    label = "percent"
+  ) +
+  # scale_fill_viridis_d()
+  scale_fill_brewer(palette = "Dark1", direction = -1) + # Set1,2,3, Dark1,2,3, Paired, Accent, Pastel1,2, 
+  theme(axis.text.x = element_text(size = 12)) +
+  labs(
+    title = "Number of Stars in Reviews for high and low freight ratio",
+    x = "Freight ratio"
+  )
+
+```
+
+
+
+
+
+
+# Distance between customer and seller
+
+## Get the data using SQL
+```{sql connection=con, output.var="df_sql"}
+/* Distance between seller and customer */
+
+-- NB the lat/lng for each zipcode are averaged
+
+with 
+geo as
+(
+  select
+    distinct(geolocation_zip_code_prefix) zipcode,
+    avg(geolocation_lat) as lat,
+    avg(geolocation_lng) as lng,
+  from `olist_db.olist_geolocation_dataset`
+  group by geolocation_zip_code_prefix
+  order by
+    geolocation_zip_code_prefix
+),
+
+seller_info as 
+(
+  select
+    distinct(sellers.seller_id),
+    seller_zip_code_prefix as seller_zipcode,
+    geo.lat as seller_lat, 
+    geo.lng as seller_lng,
+    seller_city,
+    seller_state,
+    order_id,
+    price,
+    freight_value,
+    product_weight_g,
+    product_length_cm * product_height_cm * product_width_cm as product_volume_cm3
+  from `olist_db.olist_sellers_dataset` sellers join `olist_db.olist_order_items_dataset` items
+    on sellers.seller_id = items.seller_id
+  join geo on sellers.seller_zip_code_prefix = geo.zipcode
+  join `olist_db.olist_products_dataset` products on items.product_id = products.product_id
+),
+customer_info as
+(
+  select
+    distinct(cust.customer_id),
+    customer_zip_code_prefix as customer_zipcode,
+    customer_city,
+    customer_state,
+    order_id,
+    date(order_purchase_timestamp) as date_purchased,
+    date(order_delivered_customer_date) as date_delivered,
+    geo.lat as customer_lat,
+    geo.lng as customer_lng
+  from 
+    `olist_db.olist_customesr_dataset` cust join `olist_db.olist_orders_dataset` orders
+      on cust.customer_id = orders.customer_id
+    join geo on cust.customer_zip_code_prefix = geo.zipcode
+)
+select 
+  *
+from seller_info join customer_info
+  on seller_info.order_id = customer_info.order_id
+;
+
+```
+
+
+
+## Calculate distance in km between seller and customer
+```{r}
+
+library(lubridate)
+
+df <- df_sql %>% 
+  select(-order_id_1) %>%
+  mutate(fr = freight_value / (price + freight_value)) %>%  # calculate freigth_ratio 
+  mutate(fr_segment = ifelse(fr <= 0.2, "low","high")) %>%  # set high and low fr (<>0.2)
+  mutate(days_to_deliver = interval(date_purchased, date_delivered) %>% as.numeric()  / (60 * 60 * 24)) %>% 
+  filter(!is.na(days_to_deliver))
+
+# df %>% glimpse
+
+library(geosphere)
+
+# Function to calculate distance using distGeo
+# s_lng/lat = seller; c_lng/lat = customer
+calculate_distance <- function(s_lng, s_lat, c_lng, c_lat) {
+  distm(
+    matrix(c(s_lng, s_lat), ncol = 2), 
+    matrix(c(c_lng, c_lat), ncol = 2), 
+    fun = distGeo
+  )
+}
+
+D_vector <- list(
+  df$seller_lng, df$seller_lat, 
+  df$customer_lng, df$customer_lat
+) %>% 
+  pmap_dbl(calculate_distance, .progress = TRUE)
+
+df$distance_km <- round(D_vector/1000)
+
+df$distance_km[df$distance_km < 1000] %>% hist
+
+
+```
+
+
+## Limit distance to 2000 km and days to deliver to 40
+```{r}
+
+df %>% select_if(is.numeric) %>%  summary
+
+describe <- function(column, take_log = 0) {
+  par(mfrow = c(1,2))
+  var <- df[[column]]
+  if(take_log == 1) {var = log(var)}
+  boxplot(var, main = column)
+  hist(var)
+}
+
+
+describe("days_to_deliver", 0)
+describe("fr", 0)
+
+df
+
+df %>% glimpse()
+
+df <- df %>%
+  filter(days_to_deliver <= 40) %>%  # filter all orders that took more than 2 months to be delivered
+  filter(distance_km < 2000)
+
+# df$days_to_deliver %>% hist(main = "")
+# 
+# df %>%
+#   select(price) %>%
+#   mutate(var = price) %>%
+#   ggplot(aes)
+
+```
+
+
+## Association between distance and delivery time
+With relation to freight ratio
+
+
+```{r}
+plot(distance_km ~ days_to_deliver, data = df %>% sample_frac(0.01))
+
+boxplot(df$days_to_deliver)
+boxplot(df$distance_km)
+
+fit <- lm(days_to_deliver ~ poly(distance_km,2), data = df)
+summary(fit)
+
+
+# # Regular scatterplot. The correlation is invisible
+# df %>% 
+#   sample_frac(0.5) %>% 
+#   select(distance_km, days_to_deliver) %>% 
+# ggplot(aes(x = distance_km, y = days_to_deliver)) +
+#   geom_point(color = "steelblue", alpha = 0.7) +
+#   theme_minimal()
+
+
+# 2D histogram. The correlation becomes evident
+# See
+# https://stackoverflow.com/questions/54092169/how-to-plot-ggplots-hexagon-only-if-number-greater-than-threshold
+df %>% 
+  sample_frac(1) %>% 
+  # filter(fr_segment == "high") %>% 
+  select(distance_km, days_to_deliver, fr_segment) %>% 
+  mutate(distance_bin = cut(distance_km, breaks = seq(0, 2500, by = 10))) %>% 
+  group_by(distance_bin, fr_segment) %>%
+  mutate(distance_bin = max(distance_km)) %>%
+ggplot(aes(x = distance_bin, y = days_to_deliver, 
+           fill = cut(..count.., 2^seq(4,15)) )) +
+  geom_hex(bins = 30) +
+  scale_fill_viridis_d(labels = list(2^seq(4,11),2^seq(5,12)) %>% pmap(~ paste0(.x, "-", .y))) +
+  # scale_fill_continuous(type = "viridis", trans = "log", breaks = 2^seq(15)) +
+  theme_modern() +
+  coord_fixed(ratio = 2000 / 40) +
+  labs(
+    title = "Number of orders delivered in N days for each distance",
+    subtitle = "by freight ratio segment",
+    x = "Distance (km)",
+    y = "Days to deliver",
+    fill = "Number of\nOrders"
+  ) +
+  facet_wrap(vars(fr_segment), ncol = 2) +
+  theme(strip.text = element_text(size = 12))
+
+```
+
+
+```{r}
+# # Continous version - difficult to threshold
+# df %>% 
+#   sample_frac(1) %>% 
+#   select(distance_km, days_to_deliver) %>% 
+#   mutate(distance_bin = cut(distance_km, breaks = seq(0, 2500, by = 10))) %>% 
+#   group_by(distance_bin) %>%
+#   mutate(distance_bin = max(distance_km)) %>%
+# ggplot(aes(x = distance_bin, y = days_to_deliver )) +
+#   geom_hex(bins = 30) +
+#   scale_fill_continuous(type = "viridis", trans = "log", breaks = 2^seq(15)) +
+#   theme_minimal() +
+#   coord_fixed(ratio = 50) +
+#   labs(
+#     title = "Number of orders delivered in N days for each distance",
+#     x = "Distance (km)",
+#     y = "Days to deliver",
+#     fill = "Number of\norders"
+#   )
+
+```
+
+
+## Freight ratio and days to delivery
+```{r, warning=FALSE, message=FALSE}
+df %>%
+  sample_frac(1) %>% 
+  select(fr, days_to_deliver, fr_segment) %>% 
+  mutate(delivery_times_pctile = ntile(days_to_deliver, 5)) %>% 
+  ggbarstats(
+   y = fr_segment,
+   x = delivery_times_pctile,
+   label = "percent",
+   results.subtitle = F
+  ) +
+  scale_fill_brewer(palette = "Dark1", direction = 1, labels = c("Very Slow","Slow","Average","Fast","Very Fast")) +
+  theme(axis.text.x = element_text(size = 12)) +
+  labs(
+    title = "Delivery times for high and low freight ratio",
+    x = "Freight ratio segment" 
+  ) +
+    guides(fill = guide_legend(title = "Delivery time"))  # Change "New Legend Title" to your desired title
+```
+
+
+## Differences in price
+Smaller orders have much higher freight ratio, but that is not surprising, and we already knew it.
+
+```{r, message=F, warning=F}
+
+df %>% 
+  sample_frac(1) %>% 
+  select(price, fr, fr_segment) %>% 
+  filter(fr > 0) %>%
+  ggbetweenstats(
+    x = fr_segment,
+    y = price,
+    results.subtitle = F
+  ) +
+  scale_y_continuous(trans = "log") +
+  theme(axis.text.x = element_text(size = 12))
+
+```
+
+
+
+
+## Linear modelling freight ratio - Exploration
+
+```{r, message=F}
+
+d_sample <- df %>% sample_frac(0.05)
+
+# Explore using only on a sample of df_distance to save time
+d_sample %>% 
+  filter(fr > 0) %>% 
+  select(fr, distance_km, product_weight_g, product_volume_cm3, days_to_deliver) %>% 
+  na.omit() %>% 
+  ggpairs()
+
+
+d_sample_std <- d_sample %>% 
+  mutate_at(c("fr", "distance_km", "product_weight_g", "product_volume_cm3", "days_to_deliver"), .funs=scale)
+
+df2fit <- df %>% 
+  select(fr, distance_km, product_weight_g, product_volume_cm3, days_to_deliver, price) %>%
+  filter(fr > 0) %>% 
+  mutate(log_fr = log(fr))
+
+
+
+# Modelling freight_value also gives a good result
+fit <- lm(freight_value ~ distance_km + 
+                          product_weight_g +
+                          product_volume_cm3 +
+                          # days_to_deliver + 
+                          # fr +
+                          log(price), 
+                          data = df) 
+fit %>% summary
+car::vif(fit)
+
+
+
+# Modelling freight_ratio
+# Price is by far the most important factor (negatively correlated!): 19% of the variance
+
+fit <- lm(fr ~ price, data = df2fit)
+summary(fit)
+
+
+# We get close to 80% of explained variance!.
+fit <- lm(fr ~ 
+            distance_km +
+            product_weight_g +
+            # product_volume_cm3 +
+            # days_to_deliver +
+            log(price),
+            data = df2fit) 
+
+fit %>% summary
+car::vif(fit)
+# plot(fit)
+
+
+
+
+```
+
+
+
+## Linear modelling freight ratio - Dig deeper
+```{r}
+# df2fit <- df %>% 
+#   select(fr, distance_km, product_weight_g, product_volume_cm3, days_to_deliver, price) %>%
+#   filter(fr > 0) %>% 
+#   mutate(log_fr = log(fr))
+
+
+# We get > 80% of explained variance!.
+fit <- lm(fr ~ 
+            log(distance_km + 1) +
+            product_weight_g +
+            product_volume_cm3 +
+            # log(days_to_deliver + 1) +
+            log(price),
+            data = df2fit) 
+
+fit %>% summary
+car::vif(fit)
+# plot(fit)
+```
+
+
+
+
+```{r}
+# Let's make a df with the log of the values we are interested and explore
+# the correlations
+
+df2fit <- df %>%
+  filter(fr > 0, distance_km > 0, price > 0, price < 2000) %>% 
+  mutate(log_fr = log(fr), log_distance_km = log(distance_km), log_price = log(price), fr_pct = fr*100) %>% 
+  select(fr, fr_pct, freight_value, price, distance_km, log_fr, log_price, log_distance_km, product_weight_g, product_volume_cm3) %>% 
+  filter(log_price > 0, log_distance_km > 0)
+  
+fit <- lm(
+  fr ~ 
+    log_price +
+    distance_km +
+    product_weight_g +
+    product_volume_cm3,
+  data = df2fit
+)  
+
+# log_price explains ~ 64% of the variance in fr
+fit <- lm(fr ~ log_price, data = df2fit)
+
+# distance_km explains about 3.5% of the variance
+fit <- lm(fr ~ distance_km, data = df2fit)
+
+# together they explain ~ 72% of the variance
+fit <- lm(fr ~ log_price + I(distance_km^(0.5)), data = df2fit)
+
+# adding weight and volume explains an additional 5%, to 77% of the variance
+# however this leads to a certain extent of violation of lm assumptions
+
+# the best model is obtained with log(1/price) and the sqrt(distance_km) 78% of the variance
+fit <- lm(fr ~ log(I(1/log_price)) + I(distance_km^(0.5)), data = df2fit)
+
+# however the most important evidence is that fr is predicted almost entirely from price
+# wrt other expected variables, such as distance, weight and volume, so we will use the 
+# simplest model:
+fit <- lm(fr ~ log_price, data = df2fit)
+
+fit %>% summary
+# car::vif(fit)
+# plot(fit)
+
+
+```
+
+
+Now freight_value
+```{r, message=F}
+df2fit <- df %>%
+  filter(fr > 0, freight_value > 0, distance_km > 0, price > 0, price < 2000) %>%
+  mutate(log_fr = log(fr), log_freight_value = log(freight_value),
+         log_distance_km = log(distance_km), log_price = log(price)) %>%
+  select(fr, freight_value, log_freight_value, price, distance_km, 
+         log_fr, log_price, log_distance_km, product_weight_g, product_volume_cm3) %>%
+  filter(log_price > 0, log_distance_km > 0)
+  
+
+# Modelling freight_value also gives a good result
+fit <- lm(freight_value ~ distance_km + 
+                          product_weight_g +
+                          product_volume_cm3 +
+                          log(price), 
+                          data = df2fit) 
+
+fit %>% summary
+car::vif(fit)
+
+# note also the positive association between price and dimensions 
+lm(price ~ product_volume_cm3 + product_weight_g, data = df2fit) %>% summary
+
+fit %>% summary
+# car::vif(fit)
+# plot(fit)
+
+
+# freight ratio ggpairs
+df2fit %>% 
+  sample_frac(0.01) %>% 
+  select(log_fr, log_price, distance_km, product_volume_cm3, product_weight_g) %>% 
+  ggpairs() +
+  theme_minimal() +
+  ggtitle("Freight Ratio associations")
+
+
+# freight value ggpairs
+df2fit %>% 
+  sample_frac(0.01) %>% 
+  select(log_freight_value, log_price, distance_km, product_volume_cm3, product_weight_g) %>% 
+  ggpairs() +
+  theme_minimal() +
+  ggtitle("Freight Value associations")
+
+
+lm(fr ~ poly(distance_km,2), data = df2fit) %>% summary
+
+```
+
+
+
+
+```{r}
+
+df2fit %>% 
+  summarise(
+    mean_fr = mean(fr),
+    median_fr = median(fr),
+    mean_fv = mean(freight_value),
+    median_fv = median(freight_value)
+  )
+
+
+df2fit %>% 
+  filter(price <= 100) %>% 
+  arrange(desc(freight_value)) %>% 
+  select(price, freight_value)
+  ggplot(aes(x=freight_value)) +
+  geom_histogram(bins = 50) +
+  theme_minimal()
+
+```
+
+
+
+
+```{r}
+
+df2fit %>% 
+  sample_frac(0.01) %>% 
+  ggplot(aes(x=fr)) + 
+  geom_histogram(bins=30, color = "white", fill = "steelblue") +
+  theme_modern()
+
+df2fit %>% 
+  select(fr, price, log_distance_km) %>% 
+  mutate(log_distance_km_ntile = ntile(log_distance_km + 1, 4)) %>% 
+  sample_frac(0.01) %>% 
+  filter(fr > 0) %>% 
+  ggplot(aes(x=fr, fill = log_distance_km_ntile %>% factor)) + 
+  geom_histogram(bins=30, color = "white" ) +
+  theme_modern() 
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Garbage collector
+
+```{r, include=F, eval=F}
+
+df %>% 
+  select(-freight_value) %>% 
+  rename(fr = freight_ratio) %>%
+  filter(fr > 0) %>%
+  mutate(lower_fr = round(fr * 0.95,2) ) %>% 
+  add_count(fr, name = "cnt_fr") %>% 
+  add_count(lower_fr, name = "cnt_lower_fr") %>% 
+  mutate(order_increase = cnt_lower_fr / cnt_fr) %>%
+  group_by(fr) %>% 
+  mutate(AOV = sum(price)/n()) %>%
+  ungroup() %>% 
+  mutate(new_profit = round(cnt_lower_fr * AOV,2)) %>% 
+  reframe(
+    current_fr = unique(fr),
+    AOV = unique(AOV),
+    new_profit = unique(new_profit)
+  ) %>% arrange(current_fr)
+
+
+
+
+# df %>%
+#   group_by(freight_ratio) %>% 
+#   mutate(cnt_orders = n()) %>% 
+#   mutate(AOV = sum(price) / n()) %>% 
+#   mutate(total_profit = AOV * cnt_orders) %>% 
+#   reframe(
+#     tt = sum(price),
+#     total_profit = unique(total_profit)
+#   ) %>% reframe(
+#     total_profit = sum(total_profit)
+#   )
+```
+
+
+
+
+
+```{r, include=F, eval=F}
+
+# I try to see what would happen for a range of fr_discounts
+# When applied to all fr segments, it quickly goes negative.
+# When applied only to the segment of 10-18% it increases enormously,
+# because I assume 100% conversion across all segments. This is not plausible
+# though, and to fix it would require too much time, so for the moment I wll
+# just leave it as an experiment
+
+estimate_profit <- function(df, pct_decrease_fr) {
+  df %>% 
+    rename(fr = freight_ratio) %>%
+    filter(fr > 0) %>%
+    mutate(freight_discount = freight_value * pct_decrease_fr) %>% 
+    mutate(lower_fr = round(fr * (1 - pct_decrease_fr),2) ) %>% 
+    add_count(fr, name = "cnt_fr") %>% 
+    add_count(lower_fr, name = "cnt_lower_fr") %>% 
+    mutate(order_increase = cnt_lower_fr / cnt_fr) %>% 
+    group_by(fr) %>% 
+    reframe(
+      AOV = sum(price) / n(),
+      AO_freight_discount = sum(freight_discount) / n(),
+      current_revenue = round(cnt_fr * AOV,2) %>% unique,
+      new_revenue = round(cnt_lower_fr * AOV,2) %>% unique,
+      freight_loss = round(cnt_lower_fr * AO_freight_discount,2) %>% unique
+    ) %>%
+    # express in deciles instead of percentiles of freight_ratio
+    mutate(ntile_fr = ntile(fr,10)) %>%
+    group_by(ntile_fr) %>% 
+    mutate(fr_range = paste(min(fr)*100,"-", max(fr)*100,"%")) %>% 
+    group_by(fr_range) %>% 
+    reframe(
+      current_revenue = sum(current_revenue),
+      new_revenue = sum(new_revenue),
+      total_freight_loss = sum(freight_loss)
+    ) %>% 
+    mutate(
+      current_profit = current_revenue * 0.10,
+      new_profit = ifelse(fr_range == "10 - 18 %", new_revenue * 0.10, current_revenue * 0.10), # only 10-18
+      # new_profit = (new_revenue * 0.10) - total_freight_loss  # all FR segments
+    ) %>% 
+    summarise(
+      pct_decrease_fr,
+      pct_increase_profit = (sum(new_profit) - sum(current_profit)) / sum(current_profit) * 100,
+      profit_increase = sum(current_profit) * pct_increase_profit / 100
+    )
+}
+
+
+max_fr_discount <- 0.3
+
+profits <- seq(0, max_fr_discount, 0.01) %>% map_dfr(~ estimate_profit(df,.x))
+
+
+profits %>% 
+  ggplot(aes(x = pct_decrease_fr, y = pct_increase_profit)) +
+  geom_line() +
+  theme_minimal()
+
+```
+
+
+
+
+
+
+
+## Other non-numeric variables
+Suggestion: try doing the heatmaps using reactable
+```{r, include=F, eval=F}
+
+df %>% select_if(is.character) %>% summary
+
+ddf <- df %>%
+  filter(fr > 0) %>% 
+  select(seller_state, customer_state, fr, distance_km) %>% 
+  group_by(seller_state, customer_state) %>% 
+  reframe(avg_fr = median(fr), avg_D = median(distance_km)) %>% 
+  arrange(seller_state, customer_state)
+
+
+p1 <- ddf %>% 
+ggplot(aes(x = customer_state, y = seller_state, fill = avg_fr)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme_minimal() +
+  labs(
+    title = "Heatmap of Average Freight Ratio",
+    x = "Customer State",
+    y = "Seller State",
+    fill = "Average Freight Ratio"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme_minimal() +
+  coord_fixed(ratio = 1)
+
+
+p2 <- ddf %>% 
+ggplot(aes(x = customer_state, y = seller_state, fill = avg_D)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme_minimal() +
+  labs(
+    title = "Heatmap of Average Distance",
+    x = "Customer State",
+    y = "Seller State",
+    fill = "Average Distance"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme_minimal() +
+  coord_fixed(ratio = 1)
+
+p1 + p2
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
