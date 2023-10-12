@@ -38,7 +38,7 @@ The final calculation should be displayed in the familiar triangular form
 ## Designing the query
 A simple way of conceiving the query is by: 
 1. First calculating the size of each cohort and storing it into a CTE. 
-2. In another CTE we will store the churns per week in each cohort. Crucially, this is just the count of the non-null elements in the `subscription_end` column
+2. In another CTE we will store the churns per week in each cohort. **Crucially, the number of churns is just the count of the non-null elements in the `subscription_end` column**
 3. At this point, we can simply calculate the cumulative sum of churn across weeks using a window function, 
 4. Finally, we subtract the cumulative sum of churns per cohort/week from the cohort size to get the retention (or retention rate).
 
@@ -107,6 +107,8 @@ churns_by_week as (
 ```
 By selecting * from all the previous CTEs, we get:
 
+<details>
+<summary>Toggle output</summary>
 
 | cohort     | end_week   | elapsed_weeks | n_churns |
 |------------|------------|---------------|----------|
@@ -136,6 +138,9 @@ By selecting * from all the previous CTEs, we get:
 | 2021-01-24 | 2021-01-24 | 1             | 1040     |
 | 2021-01-24 | 2021-01-31 | 2             | 196      |
 | 2021-01-31 | 0          |               |          |
+
+</details>
+<br>
 
 ## 3. Join cohort size and n_churns
 Now we can join the first two table on the common `cohort` column. 
@@ -172,6 +177,9 @@ select
 from joint_cohort_churns_table
 ```
 
+<details>
+<summary>Toggle output</summary>
+
 | cohort     | n_first_week | elapsed_weeks | n_churns | n_retention |
 |------------|--------------|---------------|----------|-------------|
 | 2020-12-27 | 17059        | 0             | 0        | 17059       |
@@ -200,6 +208,9 @@ from joint_cohort_churns_table
 | 2021-01-24 | 19998        | 1             | 1040     | 18958       |
 | 2021-01-24 | 19998        | 2             | 196      | 18762       |
 | 2021-01-31 | 2255         | 0             | 0        | 2255        |
+
+</details>
+<br>
 
 These values can then be copied in Google Sheets / Excel, where we can generate the triangular table by simply placing `cohort` in the rows, `elapsed_weeks` in the columns, and the `n_retention` as a cell value.
 
