@@ -5,7 +5,7 @@ A logistic regression approach to investigate the [Framingham dataset](https://w
 The Framingham coronary heart disease (CHD) study has been running for several decades. Its aim is to identify physical dispositions and life habits which can result in a risk of developing CHD in a 10-year time.
 
 ### Quick links
-- [Analysis report]([https://leonardoc.netlify.app/showcase/framingham_chd_logistic_regression/graded_task_logistic_regression_v5](https://tc-logistic-regression.netlify.app/)) which includes also the R code and a shiny app implementing the model[^1].
+- [Analysis report](https://tc-logistic-regression.netlify.app/) which includes also the R code and a shiny app implementing the model[^1].
 
 - [Results presentation](presentation_framingham.pdf)
 
