@@ -57,3 +57,9 @@ Dashboard to inspect Recency, Frequency and Monetization of individual or segmen
 [:atom:](https://github.com/leonardocerliani/TC_projects/tree/main/Cohort_Retention_Churn)
 <br>
 Lightweight and clean SQL code to calculate retention number/rate using CTEs and window functions.
+
+[**A/B testing**](https://github.com/leonardocerliani/TC_projects/tree/main/AB_test)
+[:book:](https://github.com/leonardocerliani/TC_projects/tree/main/AB_test)
+<br>
+Notes on A/B Testing. Link to the actual project in the page.
+
